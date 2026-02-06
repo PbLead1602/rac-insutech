@@ -20,7 +20,7 @@ function ContactForm({ darkBackground = false }) {
   setStatus("loading");
 
   try {
-    const res = await API.post("/contact", formData);
+    const res = await API.post("/api/contact", formData);
 
     if (res.data.success) {
       setStatus("success");

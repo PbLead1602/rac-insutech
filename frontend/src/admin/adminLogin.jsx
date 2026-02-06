@@ -3,6 +3,7 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import logo from "../images/RAC LOGOO.jpg"; // Using your brand logo
 import "../styles/admin.css";
+import API from "../services/api";
 
 function AdminLogin() {
   const navigate = useNavigate();
@@ -16,7 +17,7 @@ function AdminLogin() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      const res = await axios.post(`${import.meta.env.VITE_API_BASE_URL}/api/admin/login`, formData);
+      const res = await API.post("/api/admin/login", formData);
       localStorage.setItem("adminToken", res.data.token);
       navigate("/admin/dashboard");
     } catch (err) {
