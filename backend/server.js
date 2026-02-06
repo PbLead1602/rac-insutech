@@ -12,12 +12,18 @@ dotenv.config();
 const app = express();
 
 app.use(cors({
-  origin: [
-    "http://localhost:5173",
-    "https://racinsutech.com",
-    "https://www.racinsutech.com",
-    "https://*.netlify.app"
-  ],
+  origin: (origin, callback) => {
+    if (
+      !origin ||
+      origin.includes("netlify.app") ||
+      origin === "https://racinsutech.com" ||
+      origin === "https://www.racinsutech.com"
+    ) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   credentials: true
 }));
 app.use(express.json({ limit: "10mb" }));
