@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import API from "../services/api";
+import "../styles/style.css";
 
 function ContactForm({ darkBackground = false }) {
   const [formData, setFormData] = useState({
