@@ -7,4 +7,4 @@ const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 const apiKey = apiInstance.authentications['apiKey'];
 apiKey.apiKey = process.env.EMAIL_PASS; 
 
-module.exports = apiInstance;
+module.exports = apiInstan;
