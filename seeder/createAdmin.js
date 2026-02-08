@@ -25,4 +25,8 @@ async function createAdmin(){
 }
 
 createAdmin();
-{/*  raguflvajtonwcso   # from Google App Password email pass */}
+{/*  raguflvajtonwcso   # from Google App Password email pass 
+  > admin1 hash: $2b$10$lRucvNipywW8O3nsm//hG.6GTOg4J7vMa1PY.pgIQNEJgkCSc.tgC
+admin2 hash: $2b$10$c/RmJtUDZouMUz9lHtAq4.EG2Hsu0G04dArSB1Erch74XUSOL8a4a
+  
+  */}
