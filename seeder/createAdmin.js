@@ -1,13 +1,16 @@
 const bcrypt = require("bcryptjs");
-const Admin = require("../models/Admin");
-const { sequelize } = require("../config/db");
+const Admin = require("../backend/models/Admin");
+const { sequelize } = require("../backend/config/db");
 
 async function createAdmin(){
 
   await sequelize.sync();
 
-  const password1 = await bcrypt.hash("rac@123",10);
-  const password2 = await bcrypt.hash("rac@456",10);
+  const adminpass1=process.env.ADMIN_PASSWORD_1;
+  const adminpass2=process.env.ADMIN_PASSWORD_2;
+
+  const password1 = await bcrypt.hash(adminpass1,10);
+  const password2 = await bcrypt.hash(adminpass2,10);
 
   await Admin.create({
     username:"admin1",
@@ -25,8 +28,3 @@ async function createAdmin(){
 }
 
 createAdmin();
-{/*  raguflvajtonwcso   # from Google App Password email pass 
-  > admin1 hash: $2b$10$lRucvNipywW8O3nsm//hG.6GTOg4J7vMa1PY.pgIQNEJgkCSc.tgC
-admin2 hash: $2b$10$c/RmJtUDZouMUz9lHtAq4.EG2Hsu0G04dArSB1Erch74XUSOL8a4a
-  
-  */}

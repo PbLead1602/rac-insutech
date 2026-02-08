@@ -11,18 +11,7 @@ dotenv.config();
 
 const app = express();
 
-app.use(
-  cors({
-    origin: [
-      "https://racinsutech.com",
-      "https://www.racinsutech.com",
-      "https://your-netlify-site-name.netlify.app"
-    ],
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    credentials: true
-  })
-);
-
+app.use(cors());
 app.use(express.json({ limit: "10mb" }));
 app.use((err, req, res, next) => {
   if (err instanceof SyntaxError && err.status === 400 && "body" in err) {
@@ -42,8 +31,6 @@ app.get("/", (req, res) => {
   
   res.send("RAC Insutech Backend Running 🚀");
 });
-
-
 
 const PORT = process.env.PORT;
 
