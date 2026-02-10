@@ -40,7 +40,7 @@ function LayoutWrapper() {
 
 
         {/* Admin Routes */}
-        <Route path="/admin/login" element={<AdminLogin />} />
+        <Route path="/auth/login" element={<AdminLogin />} />
 
         <Route
           path="/admin/dashboard"
