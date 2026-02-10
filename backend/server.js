@@ -31,7 +31,7 @@ app.use((err, req, res, next) => {
 
 
 app.use("/api/contact", contactRoutes);
-app.use("/api/admin", adminRoutes);
+app.use("/api/auth", adminRoutes);
 app.use("/api/admin", adminLeadRoutes);
 
 
