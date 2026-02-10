@@ -1,98 +1,137 @@
-# 🚀 RAC Insutech – Lead Management System (Full Stack Web Application)
+RAC Insutech – Lead Management System (Full Stack Web Application)
 
-A **production-ready Lead Management & Business Website Platform** built using **React, Node.js, Express, MySQL, Sequelize ORM, and JWT Authentication**. The system enables businesses to capture, track, and manage leads from contact forms and WhatsApp inquiries through a **secure admin dashboard with analytics**.
+A production-ready Lead Management & Business Website Platform built using React, Node.js, Express, MySQL, Sequelize ORM, and JWT Authentication.
+The system enables businesses to capture, track, and manage leads from contact forms and WhatsApp inquiries through a secure admin dashboard with analytics.
 
-This project is fully **deployed to production** and follows real-world software engineering practices.
+⚡ This project was developed end-to-end using modern full-stack engineering practices combined with Prompt Engineering techniques to accelerate debugging, API design, deployment troubleshooting, and documentation — while validating all logic through core software engineering principles.
 
----
+This application is fully deployed to production and reflects real-world, industry-level architecture.
 
-## 🌐 Live Project Overview
+🌐 Live Project Overview
 
-* **Live Website:** [https://racinsutech.com](https://racinsutech.com)
-* **Backend API:** [https://rac-insutech-production.up.railway.app](https://rac-insutech-production.up.railway.app)
+Live Website: https://racinsutech.com
 
-This application is designed with **scalable backend architecture**, **secure authentication**, and **data-driven dashboards**, simulating an industry-level production system.
+Backend API: https://rac-insutech-production.up.railway.app
 
----
+Designed with scalable backend architecture, secure authentication, and data-driven dashboards, similar to production systems used in real businesses.
 
-## 🛠 Tech Stack
+🛠 Tech Stack
+Frontend
 
-### Frontend
+React (Vite)
 
-* React (Vite)
-* React Router
-* Axios
-* Recharts (Dashboard Charts)
-* Responsive UI Design
+React Router
 
-### Backend
+Axios
 
-* Node.js
-* Express.js
-* REST API Architecture
-* JWT Authentication
-* Nodemailer (Email Service)
+Recharts (Dashboard Charts)
 
-### Database
+Responsive UI Design
 
-* MySQL (Railway Cloud)
-* Sequelize ORM
-* Relational Schema Design
-* Automatic Timestamps
+Backend
 
-### Security
+Node.js
 
-* Bcrypt Password Hashing
-* JWT Token-Based Authentication
-* Protected Routes & Middleware Authorization
+Express.js
 
----
+REST API Architecture
 
-## 📦 Key Features
+JWT Authentication
 
-### 🔐 Admin Authentication
+Nodemailer / Brevo (Email Service)
 
-* Secure Admin Login
-* JWT Token Authorization
-* Protected Dashboard Routes
-* Session Persistence
+Database
 
-### 📊 Lead Management System
+MySQL (Railway Cloud)
 
-* Auto capture leads from contact form
-* WhatsApp lead tracking
-* Lead status workflow:
+Sequelize ORM
 
-  * NEW
-  * FOLLOW-UP
-  * CLOSED
-* Lead filtering & pagination
-* Export lead data (Excel)
+Relational Schema Design
 
-### 📈 Admin Dashboard Analytics
+Automatic Timestamps
 
-* Real-time lead statistics
-* Graph-based visualization
-* Monthly & daily tracking
-* Performance overview dashboard
+Security
 
-### 📧 Email Integration
+Bcrypt Password Hashing
 
-* Contact form email notifications
-* SMTP email service (Nodemailer / Brevo)
-* Automated email handling
+JWT Token-Based Authentication
 
-### 📱 Responsive UI
+Protected Routes & Middleware Authorization
 
-* Fully responsive landing pages
-* Mobile-friendly admin dashboard
-* Responsive tables & charts
+🤖 Prompt Engineering (Project Strength)
 
----
+Prompt Engineering was used as a productivity and problem-solving accelerator, not as a replacement for coding.
 
-## 📁 Project Folder Structure
+It helped in:
 
-```
+Structuring REST API logic and request/response flows
+
+Debugging JWT authentication & authorization issues
+
+Troubleshooting Railway cloud deployment & networking
+
+Generating clean boilerplate and improving code consistency
+
+Creating clear project documentation and README structure
+
+All AI-assisted outputs were validated, tested, and integrated manually using core full-stack development knowledge.
+
+📦 Key Features
+🔐 Admin Authentication
+
+Secure Admin Login
+
+JWT Token Authorization
+
+Protected Dashboard Routes
+
+Session Persistence
+
+📊 Lead Management System
+
+Auto-capture leads from contact form
+
+WhatsApp lead tracking
+
+Lead status workflow:
+
+NEW
+
+FOLLOW-UP
+
+CLOSED
+
+Lead filtering & pagination
+
+Export lead data to Excel
+
+📈 Admin Dashboard Analytics
+
+Real-time lead statistics
+
+Graph-based visualization
+
+Monthly & daily tracking
+
+Performance overview dashboard
+
+📧 Email Integration
+
+Contact form email notifications
+
+SMTP email service (Nodemailer / Brevo)
+
+Automated email handling
+
+📱 Responsive UI
+
+Fully responsive landing pages
+
+Mobile-friendly admin dashboard
+
+Responsive tables & charts
+
+📁 Project Folder Structure
 project RAC/
  ├── backend/
  │    ├── .env
@@ -114,56 +153,40 @@ project RAC/
  │
  └── seeder/
       └── adminSeeder.js
-```
 
----
-
-## 🧩 API Highlights
-
-| Method | Endpoint          | Description             |
-| ------ | ----------------- | ----------------------- |
-| POST   | /api/admin/login  | Admin Login             |
-| GET    | /api/admin/leads  | Fetch All Leads         |
-| POST   | /api/contact      | Contact Form Submission |
-| PUT    | /api/admin/status | Update Lead Status      |
-
----
-
-## 🎯 Real-World Practices Used
+🧩 API Highlights
+Method	Endpoint	Description
+POST	/api/admin/login	Admin Login
+GET	/api/admin/leads	Fetch All Leads
+POST	/api/contact	Contact Form Submission
+PUT	/api/admin/status	Update Lead Status
+🎯 Real-World Practices Used
 
 ✔ MVC Architecture
 ✔ RESTful API Design
 ✔ Environment Variables Management
-✔ Production Folder Structure
 ✔ Secure Authentication Flow
 ✔ Pagination & Filtering
 ✔ Excel Export Reports
+✔ Production Error Debugging
 ✔ Cloud Deployment (Railway & Netlify)
+✔ AI-Assisted Development via Prompt Engineering
 
----
-
-## 📸 Project Screenshots
+📸 Project Screenshots
 
 (Add screenshots of homepage, contact form, admin login, dashboard, lead table, and analytics charts here)
 
----
-
-## 📌 Project Status
+📌 Project Status
 
 ✅ Production Deployed
 ✅ Fully Functional
 ✅ Portfolio Ready
 
----
+👩‍💻 Developer
 
-## 👩‍💻 Developer
+Priya Bodade
+Full Stack Developer (Java Full Stack | Node.js | React)
 
-**Priya Bodade**
-Full Stack Developer (Java Full Stack / Node.js / MERN)
+GitHub: https://github.com/PbLead1602
 
-* GitHub: [https://github.com/PbLead1602](https://github.com/PbLead1602)
-* LinkedIn: (add your LinkedIn profile link)
-
----
-
-⭐ If you find this project useful, feel free to star the repository and connect!
+LinkedIn: https://www.linkedin.com/in/priya-bodade-0a2748369/
