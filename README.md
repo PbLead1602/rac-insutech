@@ -1,113 +1,98 @@
+# 🚀 RAC Insutech – Lead Management System (Full Stack Web Application)
 
-RAC Insutech – Lead Management System (Full Stack Web Application)
+A **production-ready Lead Management & Business Website Platform** built using **React, Node.js, Express, MySQL, Sequelize ORM, and JWT Authentication**. The system enables businesses to capture, track, and manage leads from contact forms and WhatsApp inquiries through a **secure admin dashboard with analytics**.
 
-A production-style Lead Management & Business Website Platform built using React, Node.js, Express, MySQL, Sequelize ORM, JWT Authentication, and modern dashboard analytics. This system allows businesses to track leads from contact forms, WhatsApp inquiries, and manage lead workflows using a secure admin dashboard.
+This project is fully **deployed to production** and follows real-world software engineering practices.
 
-🚀 Live Project Overview
+---
 
-This application is designed with real-world architecture, scalable backend structure, role-based admin authentication, and data-driven dashboards.
+## 🌐 Live Project Overview
 
-🛠 Tech Stack
-Frontend
+* **Live Website:** [https://racinsutech.com](https://racinsutech.com)
+* **Backend API:** [https://rac-insutech-production.up.railway.app](https://rac-insutech-production.up.railway.app)
 
-React (Vite / CRA Style Setup)
+This application is designed with **scalable backend architecture**, **secure authentication**, and **data-driven dashboards**, simulating an industry-level production system.
 
-React Router
+---
 
-Recharts (Dashboard Charts)
+## 🛠 Tech Stack
 
-Responsive UI Design
+### Frontend
 
-Axios API Integration
+* React (Vite)
+* React Router
+* Axios
+* Recharts (Dashboard Charts)
+* Responsive UI Design
 
-Backend
+### Backend
 
-Node.js
+* Node.js
+* Express.js
+* REST API Architecture
+* JWT Authentication
+* Nodemailer (Email Service)
 
-Express.js
+### Database
 
-REST API Architecture
+* MySQL (Railway Cloud)
+* Sequelize ORM
+* Relational Schema Design
+* Automatic Timestamps
 
-JWT Authentication
+### Security
 
-Nodemailer (Email Service)
+* Bcrypt Password Hashing
+* JWT Token-Based Authentication
+* Protected Routes & Middleware Authorization
 
-Database
+---
 
-MySQL
+## 📦 Key Features
 
-Sequelize ORM
+### 🔐 Admin Authentication
 
-Timestamps Enabled
+* Secure Admin Login
+* JWT Token Authorization
+* Protected Dashboard Routes
+* Session Persistence
 
-Relational Schema Design
+### 📊 Lead Management System
 
-Security
+* Auto capture leads from contact form
+* WhatsApp lead tracking
+* Lead status workflow:
 
-Bcrypt Password Hashing
+  * NEW
+  * FOLLOW-UP
+  * CLOSED
+* Lead filtering & pagination
+* Export lead data (Excel)
 
-JWT Token-Based Authentication
+### 📈 Admin Dashboard Analytics
 
-Protected Routes
+* Real-time lead statistics
+* Graph-based visualization
+* Monthly & daily tracking
+* Performance overview dashboard
 
-Middleware Authorization
+### 📧 Email Integration
 
-📦 Key Features
-🔐 Admin Authentication
+* Contact form email notifications
+* SMTP email service (Nodemailer / Brevo)
+* Automated email handling
 
-Secure Admin Login
+### 📱 Responsive UI
 
-JWT Token Authorization
+* Fully responsive landing pages
+* Mobile-friendly admin dashboard
+* Responsive tables & charts
 
-Protected Dashboard Routes
+---
 
-Session Persistence
+## 📁 Project Folder Structure
 
-📊 Lead Management System
-
-Auto Capture Leads from Contact Form
-
-WhatsApp Lead Tracking
-
-Status Workflow System:
-
-NEW
-
-FOLLOW-UP
-
-CLOSED
-
-Lead Filtering & Pagination
-
-Export Lead Data (Excel Support)
-
-📈 Admin Dashboard Analytics
-
-Real-time Lead Statistics
-
-Graph-Based Visualization
-
-Monthly / Daily Tracking
-
-Performance Overview
-
-📧 Email Integration
-
-Contact Form Email Notifications
-
-Nodemailer SMTP Integration
-
-Automated Email Handling
-
-📱 Responsive UI
-
-Fully Responsive Landing Page
-
-Mobile Friendly Admin Dashboard
-
-Responsive Tables & Charts
-
-📁 Project Folder Structure
+```
 project RAC/
  ├── backend/
  │    ├── .env
@@ -129,41 +114,56 @@ project RAC/
  │
  └── seeder/
       └── adminSeeder.js
+```
 
-📸 Project Screenshots
-🏠 Home Page
+---
 
-🔐 Admin Login
+## 🧩 API Highlights
 
-📊 Admin Dashboard
+| Method | Endpoint          | Description             |
+| ------ | ----------------- | ----------------------- |
+| POST   | /api/admin/login  | Admin Login             |
+| GET    | /api/admin/leads  | Fetch All Leads         |
+| POST   | /api/contact      | Contact Form Submission |
+| PUT    | /api/admin/status | Update Lead Status      |
 
-📋 Lead Management Table
+---
 
-📈 Lead Analytics Chart
-
-📱 Responsive View
-
-🧩 API Highlights
-Method	Endpoint	Description
-POST	/api/admin/login	Admin Login
-GET	/api/admin/leads	Fetch Leads
-POST	/api/contact	Contact Form Submission
-PUT	/api/admin/status	Update Lead Status
-🎯 Real World Practices Used
+## 🎯 Real-World Practices Used
 
 ✔ MVC Architecture
 ✔ RESTful API Design
-✔ Environment Variables
+✔ Environment Variables Management
 ✔ Production Folder Structure
 ✔ Secure Authentication Flow
 ✔ Pagination & Filtering
-✔ Export Reports Feature
-✔ Professional UI Layout
+✔ Excel Export Reports
+✔ Cloud Deployment (Railway & Netlify)
 
-👩‍💻 Developer
+---
 
-Priya Bodade
-Full Stack Developer (MERN / Node.js / Java Full Stack)
+## 📸 Project Screenshots
 
-GitHub:
-👉 https://github.com/PbLead1602
+(Add screenshots of homepage, contact form, admin login, dashboard, lead table, and analytics charts here)
+
+---
+
+## 📌 Project Status
+
+✅ Production Deployed
+✅ Fully Functional
+✅ Portfolio Ready
+
+---
+
+## 👩‍💻 Developer
+
+**Priya Bodade**
+Full Stack Developer (Java Full Stack / Node.js / MERN)
+
+* GitHub: [https://github.com/PbLead1602](https://github.com/PbLead1602)
+* LinkedIn: (add your LinkedIn profile link)
+
+---
+
+⭐ If you find this project useful, feel free to star the repository and connect!
