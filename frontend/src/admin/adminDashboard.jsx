@@ -19,7 +19,7 @@ function AdminDashboard() {
       setLoading(true);
       
       // 1. Fetch Leads
-      const res = await API.get(`/admin/leads?page=${currentPage}`, {
+      const res = await API.get(`api/admin/leads?page=${currentPage}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setLeads(res.data.leads || []);
@@ -27,7 +27,7 @@ function AdminDashboard() {
 
       // 2. Fetch Stats & Transform for Chart
       try {
-        const chartRes = await API.get("/admin/stats", {
+        const chartRes = await API.get("api/admin/stats", {
           headers: { Authorization: `Bearer ${token}` }
         });
 
@@ -56,7 +56,7 @@ function AdminDashboard() {
 
   const handleStatusChange = async (id, status) => {
     try {
-      await API.put(`/admin/lead/${id}`, { status }, {
+      await API.put(`api/admin/lead/${id}`, { status }, {
         headers: { Authorization: `Bearer ${token}` }
       });
       fetchLeads();
@@ -68,7 +68,7 @@ function AdminDashboard() {
   const handleDelete = async (id) => {
     if (!window.confirm("Are you sure? This is permanent!")) return;
     try {
-      await API.delete(`/admin/lead/${id}`, {
+      await API.delete(`api/admin/lead/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       fetchLeads();
