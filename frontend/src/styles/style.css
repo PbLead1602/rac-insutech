@@ -65,7 +65,7 @@
 
 .hero {
   position: relative;
-  background: url("../images/hero image.jpeg") no-repeat center/cover;
+  background: url("../images/hero-image.jpeg") no-repeat center/cover;
   min-height: 100vh;
   display: flex;
   align-items: center;
@@ -135,7 +135,7 @@
 
 /* The main section background */
 .contact-glass {
-    background: url("../images/heroimage 1.jpg") no-repeat center/cover;
+    background: url("../images/heroimage1.jpg") no-repeat center/cover;
     background-attachment: fixed;
     position: relative;
     padding: 80px 0; /* Consistent padding */

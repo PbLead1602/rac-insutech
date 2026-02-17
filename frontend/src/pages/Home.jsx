@@ -4,7 +4,7 @@ import HeroSection from "../components/HeroSection";
 import ContactForm from "../components/ContactForm";
 import products from "../data/products";
 import "../styles/style.css"; // ✅ ensure CSS styles are applied
-import racLogo from "../images/hero image.jpeg";// this is for about section
+import racLogo from "../images/hero-image.jpeg";// this is for about section
 
 function Home() {
   return (

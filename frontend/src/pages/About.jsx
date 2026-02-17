@@ -2,7 +2,7 @@
 import React from "react";
 import { Link } from "react-router-dom";
 import "../styles/style.css";
-import aboutimg from "../images/about image.jpg";
+import aboutimg from "../images/aboutimage.jpg";
 
 function About() {
   return (
