@@ -15,7 +15,9 @@ app.use(cors({
   origin: [
     "https://racinsutech.com",
     "https://www.racinsutech.com",
-    "https://<your-netlify-site>.netlify.app"
+    "*",
+    "https://your-netlify-url.netlify.app",
+    "https://your-cloudflare-url.pages.dev"
   ],
   credentials: true
 }));
