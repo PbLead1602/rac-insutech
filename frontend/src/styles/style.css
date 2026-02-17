@@ -197,22 +197,33 @@
 }
 
 /* ================= FOOTER ================= */
-
 .footer-section {
   background-color: #003366;
   color: #ffffff;
   padding: 40px 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .footer-link {
   color: #dce3f1;
   text-decoration: none;
+  transition: 0.3s;
 }
 
 .footer-link:hover {
-  color: #007bff;
+  color: #ffffff;
+  text-decoration: underline;
 }
 
+.footer-section p {
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: #e0e0e0;
+}
+
+.footer-section h5, .footer-section h6 {
+  color: #ffffff;
+}
 /* ================= ABOUT ================= */
 
 .about-section {

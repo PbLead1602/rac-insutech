@@ -14,10 +14,14 @@ function Footer() {
               Delivering trusted industrial solutions with innovation, precision, 
               and reliability.
             </p>
+            <p className="small mt-2">
+              <strong>GSTIN:</strong> 27AKLPL9475H1ZH <br />
+              <strong>State:</strong> 27-Maharashtra
+            </p>
           </div>
 
           {/* Quick Links */}
-          <div className="col-md-4 mb-4 mb-md-0">
+          <div className="col-md-3 mb-4 mb-md-0">
             <h6 className="fw-bold mb-3">Quick Links</h6>
             <ul className="list-unstyled">
               <li><Link to="/" className="footer-link">Home</Link></li>
@@ -27,15 +31,22 @@ function Footer() {
             </ul>
           </div>
 
-          {/* Social Media */}
-          <div className="col-md-4">
-            <h6 className="fw-bold mb-3">Connect with Us</h6>
-            <div className="social-icons">
-              <a href="# " className="me-3"><i className="bi bi-facebook"></i></a>
-              <a href="# " className="me-3"><i className="bi bi-linkedin"></i></a>
-              <a href="# " className="me-3"><i className="bi bi-instagram"></i></a>
-              <a href="# "><i className="bi bi-envelope-fill"></i></a>
-            </div>
+          {/* Contact & Address Details */}
+          <div className="col-md-5">
+            <h6 className="fw-bold mb-3">Contact Details</h6>
+            <p className="mb-1">
+              <i className="bi bi-geo-alt-fill me-2"></i>
+              Rukhmini Niwas, Near Vrundavan Garden Appt. 
+              Behind Tulshan Bungalow, Geeta Nagar, Akola
+            </p>
+            <p className="mb-1">
+              <i className="bi bi-telephone-fill me-2"></i>
+              +91 9130958594
+            </p>
+            <p className="mb-0">
+              <i className="bi bi-envelope-fill me-2"></i>
+              racinsutech@gmail.com
+            </p>
           </div>
         </div>
 
