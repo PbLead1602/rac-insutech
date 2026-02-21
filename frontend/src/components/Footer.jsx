@@ -14,10 +14,7 @@ function Footer() {
               Delivering trusted industrial solutions with innovation, precision, 
               and reliability.
             </p>
-            <p className="small mt-2">
-              <strong>GSTIN:</strong> 27AKLPL9475H1ZH <br />
-              <strong>State:</strong> 27-Maharashtra
-            </p>
+            
           </div>
 
           {/* Quick Links */}
