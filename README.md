@@ -92,7 +92,7 @@ The implementation lives in:
 - Phase 1 supports XLPE Sheet Insulation, XLPE Tubes, Nitrile Rubber Sheet, Open Cell Nitrile Rubber Sheet, Nitrile Rubber Tube, Insulation Tape and Insulation Adhesive. Each uses its appropriate commercial unit: rolls, boxes, cartons, running metres, tape rolls/units or adhesive drums.
 - The browser never submits a price. `app/api/quotations/route.ts` loads the server catalogue, rechecks combinations, applies carton rounding, calculates GST, and creates the quote number.
 - The supplied XLPE/NBR and Nitrile Tube Class O workbooks provide the embedded development rate card, including sheet dimensions, available laminations, tube pack lengths and per-unit rates. The generator uses a clearly labelled, temporary in-memory store, Turnstile mock verification and mock email logging when production credentials are absent.
-- Before launch, confirm the current commercial validity with RAC, then import current approved rates using [`database/quotation-rate-card-template.csv`](./database/quotation-rate-card-template.csv) into `quotation_rate_cards`. The server will then replace the embedded rate with that governed table.
+- The production baseline is versioned in [`supabase/migrations`](./supabase/migrations): it creates the governed `quotation_rate_cards` table and loads the 807 current RAC configurations from the reviewed catalogue. The server then replaces the embedded rate with that governed table. Future commercial changes must go through **Admin → Rate cards** and preserve history.
 
 The main implementation is in [`app/generate-quotation/page.tsx`](./app/generate-quotation/page.tsx), [`lib/quotations/catalogue.ts`](./lib/quotations/catalogue.ts), [`app/api/quotations/route.ts`](./app/api/quotations/route.ts), and [`lib/repositories/quotations.ts`](./lib/repositories/quotations.ts). Secure quote links use an opaque access token and the branded PDF is generated only after that token is verified.
 
@@ -154,7 +154,7 @@ curl http://localhost:3000/api/health
 
 ## Next implementation steps after credentials
 
-1. Run the migrations/seed against the production project and create the sole `admin` user.
+1. Follow the repeatable Supabase release procedure in [`docs/cloudflare-supabase-launch.md`](./docs/cloudflare-supabase-launch.md): push the versioned migrations, deliberately promote the sole `admin` account, then test the approval workflow.
 2. Replace the supplied starter records with verified RAC product, brand, and manufacturer documentation.
 3. Configure signed URLs in the enquiry-admin screen before exposing attachment downloads.
 4. Configure Supabase Storage upload policies if Admin should upload files directly rather than register managed asset paths.

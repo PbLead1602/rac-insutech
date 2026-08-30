@@ -12,14 +12,54 @@
 
 V1 remains the production service until the V2 preview passes the acceptance checklist. Do not assign `racinsutech.com` or `www.racinsutech.com` to the V2 Worker during preview.
 
-## 1. Create the Supabase production project
+## 1. Create and deploy the Supabase V2 project
 
-1. Create a **new** Supabase project for V2 in the region nearest RAC's users.
-2. Store the project URL, anon key and service-role key in a password manager. The service-role key is server-only and must never appear in Git, browser code or a public document.
-3. In the Supabase SQL editor, run every file in `database/migrations` in numeric order, `0001` through `0015`.
-4. Run `database/seed.sql` only after reviewing the inserted catalogue and rate-card data. It is initial commercial configuration, not a replacement for V1 customer/lead history.
-5. Enable Email/Password authentication in **Authentication → Providers**.
-6. Configure the initial RAC Admin account and verify that the account has the database `admin` role before inviting or approving customers.
+The V2 project is `rac-insutech-v2` (`jgyzwgavxzpoxbnlgkhd`). Keep V1 and its data path untouched during this preview phase.
+
+1. Store the project URL, anon key and service-role key in a password manager. The service-role key is server-only and must never appear in Git, browser code or a public document.
+2. The executable schema source is [`supabase/migrations`](../supabase/migrations), not the historic `database/migrations` folder. It contains the V2 schema, Admin hardening, 28 product records and 807 governed rate-card configurations.
+3. In a **normal interactive PowerShell window** in the project folder, run the following commands. Do not paste a Supabase access token, database password, anon key or service-role key into chat.
+
+   ```powershell
+   npx supabase login
+   npx supabase link --project-ref jgyzwgavxzpoxbnlgkhd
+   ```
+
+   The second command asks for the database password chosen when the Supabase project was created. The CLI stores the link locally in ignored state only.
+
+4. Back in this project, preview the exact release and apply it only after the preview lists migrations `20260830000001` through `20260830000018`:
+
+   ```powershell
+   npm run supabase:push:dry
+   npm run supabase:push
+   npx supabase migration list --linked
+   ```
+
+   Do **not** use `supabase db reset --linked`; it is destructive. Do **not** use `--include-seed` in production. `supabase/seed.sql` exists only for fresh local development; the initial commercial baseline is the versioned `20260830000017` migration.
+
+5. Before the public app receives Supabase credentials, create the sole RAC Admin deliberately:
+
+   - In **Supabase Dashboard → Authentication → Users**, create the intended RAC Admin email/password account and auto-confirm that employee account.
+   - In **SQL Editor**, replace the placeholder and execute the following one-time promotion. It refuses to create a second primary Admin.
+
+   ```sql
+   update public.profiles
+   set role = 'admin', is_primary_admin = true
+   where lower(email) = lower('<RAC_ADMIN_EMAIL>')
+     and not exists (
+       select 1 from public.profiles where is_primary_admin
+     );
+
+   select email, role, is_primary_admin
+   from public.profiles
+   where lower(email) = lower('<RAC_ADMIN_EMAIL>');
+   ```
+
+   A successful result is exactly one row with `role = admin` and `is_primary_admin = true`. Migration `20260830000016` prevents all later public registrations from becoming an Admin by accident.
+
+6. In **Authentication → Providers**, enable Email/Password sign-in. For preview, keep customer email confirmation on and add the preview callback URL listed below before creating a test Customer.
+
+7. Run the customer-registration and Admin-approval acceptance tests before entering any Cloudflare or custom-domain credentials.
 
 ## 2. Configure Supabase authentication and email
 

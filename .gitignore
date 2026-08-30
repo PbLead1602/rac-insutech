@@ -35,3 +35,8 @@ Thumbs.db
 .wrangler/
 .dev.vars
 .vinext/
+
+# Supabase CLI state is machine- and project-specific. SQL migrations, seed
+# files and config.toml remain version controlled.
+supabase/.temp/
+supabase/.branches/
