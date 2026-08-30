@@ -41,10 +41,10 @@ begin
     from pg_policies
     where schemaname = 'public'
       and (
-        coalesce(qual, '') like '%public.is_rac_admin()%'
-        or coalesce(qual, '') like '%public.is_content_admin()%'
-        or coalesce(with_check, '') like '%public.is_rac_admin()%'
-        or coalesce(with_check, '') like '%public.is_content_admin()%'
+        coalesce(qual, '') like '%is_rac_admin()%'
+        or coalesce(qual, '') like '%is_content_admin()%'
+        or coalesce(with_check, '') like '%is_rac_admin()%'
+        or coalesce(with_check, '') like '%is_content_admin()%'
       )
   loop
     -- PostgreSQL deparses the legacy policy expressions without the public
