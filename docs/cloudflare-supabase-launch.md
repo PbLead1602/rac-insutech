@@ -14,7 +14,7 @@ V1 remains the production service until the V2 preview passes the acceptance che
 
 ## 1. Create and deploy the Supabase V2 project
 
-The V2 project is `rac-insutech-v2` (`jgyzwgavxzpoxbnlgkhd`). Keep V1 and its data path untouched during this preview phase.
+The V2 project is `rac-insutech-v2` (`igyzwgavxzpoxbnlgkhd`). Keep V1 and its data path untouched during this preview phase.
 
 1. Store the project URL, anon key and service-role key in a password manager. The service-role key is server-only and must never appear in Git, browser code or a public document.
 2. The executable schema source is [`supabase/migrations`](../supabase/migrations), not the historic `database/migrations` folder. It contains the V2 schema, Admin hardening, 28 product records and 807 governed rate-card configurations.
@@ -22,7 +22,7 @@ The V2 project is `rac-insutech-v2` (`jgyzwgavxzpoxbnlgkhd`). Keep V1 and its da
 
    ```powershell
    npx supabase login
-   npx supabase link --project-ref jgyzwgavxzpoxbnlgkhd
+   npx supabase link --project-ref igyzwgavxzpoxbnlgkhd
    ```
 
    The second command asks for the database password chosen when the Supabase project was created. The CLI stores the link locally in ignored state only.
