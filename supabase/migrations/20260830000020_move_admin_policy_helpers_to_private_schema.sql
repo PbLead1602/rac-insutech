@@ -32,9 +32,12 @@ declare
   policy_record record;
   updated_qual text;
   updated_check text;
+  role_list text;
+  using_clause text;
+  check_clause text;
 begin
   for policy_record in
-    select schemaname, tablename, policyname, qual, with_check
+    select schemaname, tablename, policyname, permissive, roles, cmd, qual, with_check
     from pg_policies
     where schemaname = 'public'
       and (
@@ -49,12 +52,24 @@ begin
     updated_qual := replace(replace(policy_record.qual, 'is_content_admin()', 'private.is_content_admin()'), 'is_rac_admin()', 'private.is_rac_admin()');
     updated_check := replace(replace(policy_record.with_check, 'is_content_admin()', 'private.is_content_admin()'), 'is_rac_admin()', 'private.is_rac_admin()');
 
-    if updated_qual is not null then
-      execute format('alter policy %I on %I.%I using (%s)', policy_record.policyname, policy_record.schemaname, policy_record.tablename, updated_qual);
-    end if;
-    if updated_check is not null then
-      execute format('alter policy %I on %I.%I with check (%s)', policy_record.policyname, policy_record.schemaname, policy_record.tablename, updated_check);
-    end if;
+    role_list := coalesce(array_to_string(policy_record.roles, ', '), 'public');
+    using_clause := case when updated_qual is null then '' else format(' using (%s)', updated_qual) end;
+    check_clause := case when updated_check is null then '' else format(' with check (%s)', updated_check) end;
+
+    -- Recreate instead of ALTER: PostgreSQL retains the old function OID as a
+    -- dependency when changing an existing policy expression.
+    execute format('drop policy %I on %I.%I', policy_record.policyname, policy_record.schemaname, policy_record.tablename);
+    execute format(
+      'create policy %I on %I.%I as %s for %s to %s%s%s',
+      policy_record.policyname,
+      policy_record.schemaname,
+      policy_record.tablename,
+      policy_record.permissive,
+      policy_record.cmd,
+      role_list,
+      using_clause,
+      check_clause
+    );
   end loop;
 end;
 $$;
