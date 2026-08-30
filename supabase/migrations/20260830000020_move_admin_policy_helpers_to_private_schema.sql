@@ -44,8 +44,10 @@ begin
         or coalesce(with_check, '') like '%public.is_content_admin()%'
       )
   loop
-    updated_qual := replace(replace(policy_record.qual, 'public.is_content_admin()', 'private.is_content_admin()'), 'public.is_rac_admin()', 'private.is_rac_admin()');
-    updated_check := replace(replace(policy_record.with_check, 'public.is_content_admin()', 'private.is_content_admin()'), 'public.is_rac_admin()', 'private.is_rac_admin()');
+    -- PostgreSQL deparses the legacy policy expressions without the public
+    -- schema prefix, hence these exact unqualified replacements.
+    updated_qual := replace(replace(policy_record.qual, 'is_content_admin()', 'private.is_content_admin()'), 'is_rac_admin()', 'private.is_rac_admin()');
+    updated_check := replace(replace(policy_record.with_check, 'is_content_admin()', 'private.is_content_admin()'), 'is_rac_admin()', 'private.is_rac_admin()');
 
     if updated_qual is not null then
       execute format('alter policy %I on %I.%I using (%s)', policy_record.policyname, policy_record.schemaname, policy_record.tablename, updated_qual);
