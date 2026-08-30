@@ -2,6 +2,18 @@
 
 An SEO-ready RAC Insutech website built with Next.js, TypeScript, Tailwind CSS, Framer Motion and Supabase-ready services. It is designed to start locally without real integration credentials and switch cleanly to production services when keys are supplied.
 
+## Cloudflare Workers deployment
+
+The V2 application runs as a full-stack Cloudflare Worker. This includes the public catalogue, Admin portal, Customer portal and all API route handlers; it is not a static Cloudflare Pages export.
+
+```bash
+npm run build:vinext
+npm run start:vinext
+npm run deploy:vinext
+```
+
+The Worker is deliberately named `rac-insutech-v2` so V2 preview deployments cannot overwrite the live V1 service. Follow [`docs/cloudflare-supabase-launch.md`](./docs/cloudflare-supabase-launch.md) for the required Supabase, authentication, email, Turnstile, Cloudflare and safe cutover steps.
+
 ## Run locally
 
 ```bash
