@@ -27,7 +27,7 @@ The V2 project is `rac-insutech-v2` (`igyzwgavxzpoxbnlgkhd`). Keep V1 and its da
 
    The second command asks for the database password chosen when the Supabase project was created. The CLI stores the link locally in ignored state only.
 
-4. Back in this project, preview the exact release and apply it only after the preview lists migrations `20260830000001` through `20260830000018`:
+4. Back in this project, preview the exact release and apply it only after the preview lists migrations `20260830000001` through `20260830000019`:
 
    ```powershell
    npm run supabase:push:dry
