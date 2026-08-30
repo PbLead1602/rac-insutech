@@ -1,0 +1,7 @@
+import { NextResponse } from "next/server";
+import { getAdminRequestContext } from "@/lib/auth/admin-server";
+import { createAdminVariant, listAdminVariants } from "@/lib/repositories/variants";
+import { adminVariantCreateSchema } from "@/lib/validation/admin-variants";
+export const dynamic="force-dynamic";
+export async function GET(request:Request){if(!await getAdminRequestContext(request))return NextResponse.json({ok:false,message:"Authorised Admin access is required."},{status:401});try{return NextResponse.json({ok:true,variants:await listAdminVariants(new URL(request.url).searchParams.get("q")||"")})}catch(error){return NextResponse.json({ok:false,message:error instanceof Error?error.message:"Could not load variants."},{status:500})}}
+export async function POST(request:Request){if(!await getAdminRequestContext(request))return NextResponse.json({ok:false,message:"Authorised Admin access is required."},{status:401});const parsed=adminVariantCreateSchema.safeParse(await request.json());if(!parsed.success)return NextResponse.json({ok:false,message:parsed.error.issues[0]?.message||"Check the variant details."},{status:400});try{const result=await createAdminVariant(parsed.data);return NextResponse.json({ok:true,variant:result.variant},{status:201})}catch(error){return NextResponse.json({ok:false,message:error instanceof Error?error.message:"Could not create the variant."},{status:500})}}

@@ -1,0 +1,8 @@
+import { NextResponse } from "next/server";
+import { getAdminRequestContext } from "@/lib/auth/admin-server";
+import { createAdminCategory, listAdminCategories } from "@/lib/repositories/categories";
+import { recordAdminActivity } from "@/lib/repositories/activity";
+import { adminCategoryCreateSchema } from "@/lib/validation/admin-categories";
+export const dynamic = "force-dynamic";
+export async function GET(request: Request) { if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 }); try { return NextResponse.json({ ok: true, categories: await listAdminCategories(new URL(request.url).searchParams.get("q") || "") }); } catch (error) { return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not load categories." }, { status: 500 }); } }
+export async function POST(request: Request) { if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 }); const parsed = adminCategoryCreateSchema.safeParse(await request.json()); if (!parsed.success) return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message || "Check the category details." }, { status: 400 }); try { const result = await createAdminCategory(parsed.data); await recordAdminActivity({ action: "created", entityType: "category", entityId: result.category.id, summary: `Created category: ${result.category.name}` }); return NextResponse.json({ ok: true, category: result.category }, { status: 201 }); } catch (error) { return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not create the category." }, { status: 500 }); } }

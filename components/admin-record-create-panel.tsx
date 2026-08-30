@@ -1,0 +1,32 @@
+"use client";
+
+import { FormEvent, useState } from "react";
+import { useRouter } from "next/navigation";
+import { ArrowRight } from "lucide-react";
+import { adminFetch } from "@/lib/auth/admin-client";
+
+type Kind = "category" | "document" | "content";
+const copy: Record<Kind, { eyebrow: string; title: string; back: string; endpoint: string }> = {
+  category: { eyebrow: "CATALOGUE TAXONOMY", title: "Add product category", back: "/admin/categories", endpoint: "/api/admin/categories" },
+  document: { eyebrow: "DOCUMENT CONTROL", title: "Register document", back: "/admin/documents", endpoint: "/api/admin/documents" },
+  content: { eyebrow: "WEBSITE CONTENT", title: "Add website content", back: "/admin/content", endpoint: "/api/admin/site-content" },
+};
+
+export default function AdminRecordCreatePanel({ kind }: { kind: Kind }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  const meta = copy[kind];
+  const submit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault(); const form = new FormData(event.currentTarget);
+    let payload: Record<string, unknown>;
+    if (kind === "category") payload = { parentId: String(form.get("parentId") || ""), name: String(form.get("name") || ""), slug: String(form.get("slug") || ""), description: String(form.get("description") || ""), imageUrl: String(form.get("imageUrl") || ""), sortOrder: Number(form.get("sortOrder") || 0), status: String(form.get("status") || "draft"), seoTitle: String(form.get("seoTitle") || ""), seoDescription: String(form.get("seoDescription") || "") };
+    else if (kind === "document") payload = { title: String(form.get("title") || ""), documentType: String(form.get("documentType") || "brochure"), productId: String(form.get("productId") || ""), materialFamily: String(form.get("materialFamily") || ""), version: String(form.get("version") || ""), documentDate: String(form.get("documentDate") || ""), fileUrl: String(form.get("fileUrl") || ""), visibility: String(form.get("visibility") || "internal"), status: String(form.get("status") || "current"), replacedById: String(form.get("replacedById") || "") };
+    else {
+      try { const body = JSON.parse(String(form.get("body") || "{}")); if (!body || Array.isArray(body) || typeof body !== "object") throw new Error(); payload = { contentKey: String(form.get("contentKey") || ""), title: String(form.get("title") || ""), body, status: String(form.get("status") || "draft"), seoTitle: String(form.get("seoTitle") || ""), seoDescription: String(form.get("seoDescription") || "") }; } catch { setError("Content body must be a valid JSON object."); return; }
+    }
+    setBusy(true); setError(""); const response = await adminFetch(meta.endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }); const data = await response.json() as { message?: string; ok?: boolean };
+    setBusy(false); if (!response.ok || !data.ok) { setError(data.message || `Could not save this ${kind}.`); return; }
+    router.push(meta.back);
+  };
+  return <div className="admin-os-content"><section className="admin-os-module-intro"><div><p>{meta.eyebrow}</p><h2>{meta.title}</h2><span>Create a controlled record and return to the module to review or publish it.</span></div><button type="button" onClick={() => router.push(meta.back)}>Back</button></section><form className="admin-customer-fields admin-os-card" onSubmit={submit}>{kind === "category" && <><div className="admin-customer-fields-grid"><label>Name<input name="name" required autoFocus /></label><label>URL slug<input name="slug" required /></label><label>Sort order<input name="sortOrder" type="number" min="0" defaultValue="0" /></label><label>Status<select name="status" defaultValue="draft"><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></label><label>Parent ID (optional)<input name="parentId" /></label><label>Image path / URL<input name="imageUrl" /></label><label>SEO title<input name="seoTitle" /></label></div><label>Description<textarea name="description" /></label><label>SEO description<textarea name="seoDescription" /></label></>}{kind === "document" && <><div className="admin-customer-fields-grid"><label>Title<input name="title" required autoFocus /></label><label>Document type<select name="documentType" defaultValue="brochure"><option value="brochure">Brochure</option><option value="datasheet">Datasheet</option><option value="test_certificate">Test certificate</option><option value="installation_guide">Installation guide</option><option value="other">Other</option></select></label><label>Product ID / slug (optional)<input name="productId" /></label><label>Material family<input name="materialFamily" /></label><label>Version<input name="version" /></label><label>Document date<input name="documentDate" type="date" /></label><label>Visibility<select name="visibility" defaultValue="internal"><option value="public">Public</option><option value="internal">Internal only</option></select></label><label>Status<select name="status" defaultValue="current"><option value="current">Current</option><option value="archived">Archived</option></select></label></div><label>File URL or relative path<input name="fileUrl" required placeholder="/brochures/product.pdf or https://..." /></label><label>Replacement document ID (optional)<input name="replacedById" /></label></>}{kind === "content" && <><div className="admin-customer-fields-grid"><label>Content key<input name="contentKey" required autoFocus placeholder="homepage.hero" /></label><label>Internal title<input name="title" /></label><label>Status<select name="status" defaultValue="draft"><option value="draft">Draft</option><option value="published">Published</option><option value="archived">Archived</option></select></label><label>SEO title<input name="seoTitle" /></label></div><label>SEO description<textarea name="seoDescription" /></label><label>Content body (JSON)<textarea className="admin-content-json" name="body" required defaultValue={'{\n  "heading": "",\n  "description": ""\n}'} /></label></>}{error && <p className="admin-form-error">{error}</p>}<div className="admin-customer-form-actions"><button type="button" className="admin-drawer-secondary" onClick={() => router.push(meta.back)}>Cancel</button><button className="admin-os-primary" disabled={busy}>{busy ? "Saving..." : "Save record"}<ArrowRight size={15} /></button></div></form></div>;
+}

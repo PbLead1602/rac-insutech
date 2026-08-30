@@ -1,0 +1,9 @@
+product_slug,material_class,thickness,size_label,lamination,order_unit,rate,rate_unit,roll_area_m2,pack_running_metres,active,valid_from,valid_to
+xlpe-sheet,Class O,13 mm (1/2 in),"1.25 m x 25 m (31.25 m2 / roll)",AL foil,roll,207.3565,square metre,31.25,,true,,
+nitrile-rubber-sheet,Class O,19 mm (3/4 in),"1.2 m x 10 m (12.00 m2 / roll)",AL foil,roll,342.5275,square metre,12,,true,,
+open-cell-nitrile-rubber-sheet,Class 1,10 mm,"1 m x 1 m (1.00 m2 / sheet; 12 m2 / box; 180-200 kg/m3)",Plain,box,463,square metre,1,,true,,
+nitrile-rubber-tube,Class O,13 mm,"1/2 in | 13 mm ID | 39 mm OD",AL foil,running_metre,52.66108,running metre,,160,true,,
+nitrile-rubber-tube-class-1,Class 1,6 mm,"1/4 in ID | 6 mm x 6 mm | 272 tubes / carton | 1830 +/- 50 mm length",Plain,carton,10.84,tube,,,true,,
+xlpe-tube,Standard,9 mm,"3/8 in | 12 mm ID | 30 mm OD | 2 m supplied length",ALU foil,running_metre,45.5,running metre,,2,true,,
+insulation-tape,Aluminium Tape,Not applicable,"25 mm width x 20 m roll",Not applicable,unit,100,unit,,,true,,
+insulation-adhesive,PEDILITE SR505,Not applicable,1 L drum,Not applicable,drum,250,litre,,,true,,

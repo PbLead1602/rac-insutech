@@ -1,0 +1,10 @@
+import "server-only";
+import { randomUUID } from "crypto";
+import type { ActivityRecord } from "@/lib/db/types";
+import { integrationMode } from "@/lib/env";
+import { serverEnv } from "@/lib/env/server";
+import { getSupabaseServiceClient } from "@/lib/supabase/server";
+import { persistentDevelopmentStore } from "@/lib/development/persistent-store";
+function store() { return persistentDevelopmentStore<ActivityRecord[]>("activity", () => []); }
+export async function recordAdminActivity(input: Omit<ActivityRecord, "id" | "createdAt">) { const mode = integrationMode(serverEnv.supabaseServiceConfigured); if (mode === "mock") { store().unshift({ ...input, id: randomUUID(), createdAt: new Date().toISOString() }); return; } if (mode === "unconfigured") return; const client = getSupabaseServiceClient(); if (!client) return; await client.from("activity_log").insert({ action: input.action, entity_type: input.entityType, entity_id: input.entityId || null, summary: input.summary }); }
+export async function listAdminActivity(query = ""): Promise<ActivityRecord[]> { const mode = integrationMode(serverEnv.supabaseServiceConfigured); const search = query.trim().toLowerCase(); if (mode === "mock") return store().filter((item) => !search || [item.action, item.entityType, item.entityId, item.summary].join(" ").toLowerCase().includes(search)); if (mode === "unconfigured") throw new Error("Activity storage is not configured."); const client = getSupabaseServiceClient(); if (!client) throw new Error("Supabase service client is unavailable."); const { data, error } = await client.from("activity_log").select("id,action,entity_type,entity_id,summary,created_at").order("created_at", { ascending: false }).limit(300); if (error) throw new Error("Could not load activity."); return (data || []).map((row) => ({ id: String(row.id), action: String(row.action), entityType: String(row.entity_type), entityId: row.entity_id ? String(row.entity_id) : undefined, summary: String(row.summary), createdAt: String(row.created_at) })).filter((item) => !search || [item.action, item.entityType, item.entityId, item.summary].join(" ").toLowerCase().includes(search)); }

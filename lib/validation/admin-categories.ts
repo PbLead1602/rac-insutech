@@ -1,0 +1,3 @@
+import { z } from "zod";
+const base = z.object({ parentId: z.string().trim().max(160).optional().default(""), name: z.string().trim().min(2).max(180), slug: z.string().trim().min(2).max(100).regex(/^[a-z0-9-]+$/, "Use lowercase letters, numbers and dashes."), description: z.string().trim().max(1000).optional().default(""), imageUrl: z.string().trim().max(1000).optional().default(""), sortOrder: z.coerce.number().int().min(0).max(9999), status: z.enum(["draft", "published", "archived"]), seoTitle: z.string().trim().max(180).optional().default(""), seoDescription: z.string().trim().max(320).optional().default("") });
+export const adminCategoryCreateSchema = base; export const adminCategoryPatchSchema = base.partial();

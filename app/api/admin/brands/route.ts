@@ -1,0 +1,8 @@
+import { NextResponse } from "next/server";
+import { getAdminRequestContext } from "@/lib/auth/admin-server";
+import { createAdminBrand, listAdminBrands } from "@/lib/repositories/brands";
+import { recordAdminActivity } from "@/lib/repositories/activity";
+import { adminBrandCreateSchema } from "@/lib/validation/admin-brands";
+export const dynamic = "force-dynamic";
+export async function GET(request: Request) { if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 }); try { return NextResponse.json({ ok: true, brands: await listAdminBrands(new URL(request.url).searchParams.get("q") || "") }); } catch (error) { return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not load brands." }, { status: 500 }); } }
+export async function POST(request: Request) { if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 }); const parsed = adminBrandCreateSchema.safeParse(await request.json()); if (!parsed.success) return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message || "Check the brand details." }, { status: 400 }); try { const result = await createAdminBrand(parsed.data); await recordAdminActivity({ action: "created", entityType: "brand", entityId: result.brand.id, summary: `Created brand record: ${result.brand.name}` }); return NextResponse.json({ ok: true, brand: result.brand }, { status: 201 }); } catch (error) { return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not create the brand." }, { status: 500 }); } }

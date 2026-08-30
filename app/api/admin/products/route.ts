@@ -1,0 +1,7 @@
+import { NextResponse } from "next/server";
+import { getAdminRequestContext } from "@/lib/auth/admin-server";
+import { createAdminProduct, listAdminProducts } from "@/lib/repositories/products";
+import { adminProductCreateSchema } from "@/lib/validation/admin-products";
+export const dynamic = "force-dynamic";
+export async function GET(request: Request) { if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 }); try { return NextResponse.json({ ok: true, products: await listAdminProducts(new URL(request.url).searchParams.get("q") || "") }); } catch (error) { return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not load products." }, { status: 500 }); } }
+export async function POST(request: Request) { if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 }); const parsed = adminProductCreateSchema.safeParse(await request.json()); if (!parsed.success) return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message || "Check the product details." }, { status: 400 }); try { const result = await createAdminProduct(parsed.data); return NextResponse.json({ ok: true, product: result.product }, { status: 201 }); } catch (error) { return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not create the product." }, { status: 500 }); } }

@@ -1,0 +1,9 @@
+import { NextResponse } from "next/server";
+import { z } from "zod";
+import { customerAccessFailure, customerPortalReadFailure, getCustomerRequestContext } from "@/lib/auth/customer-server";
+import { createCustomerProject, customerPortalSnapshot } from "@/lib/repositories/customer-portal";
+
+const schema = z.object({ title: z.string().trim().min(2).max(160), location: z.string().trim().max(250).optional(), application: z.string().trim().max(300).optional(), deliveryLocation: z.string().trim().max(250).optional(), expectedRequirementDate: z.string().trim().max(30).optional(), notes: z.string().trim().max(2000).optional() });
+export const dynamic = "force-dynamic";
+export async function GET(request: Request) { const context = await getCustomerRequestContext(request); const failure = customerPortalReadFailure(context); if (failure) return NextResponse.json({ ok: false, message: failure.message }, { status: failure.status }); const portal = await customerPortalSnapshot(context!); return NextResponse.json({ ok: true, projects: portal.projects }); }
+export async function POST(request: Request) { const context = await getCustomerRequestContext(request); const failure = customerAccessFailure(context); if (failure) return NextResponse.json({ ok: false, message: failure.message }, { status: failure.status }); const parsed = schema.safeParse(await request.json()); if (!parsed.success) return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message || "Please check the project information." }, { status: 400 }); try { const result = await createCustomerProject(context!, parsed.data); return NextResponse.json({ ok: true, project: result.project }, { status: 201 }); } catch (error) { return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not create the project." }, { status: 400 }); } }

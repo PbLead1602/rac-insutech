@@ -1,22 +1,35 @@
-# Node modules
 node_modules/
-# Build folders
-frontend/build/
-frontend/dist/
-# Environment files
+.rac-insutech-development-data.json
+.rac-insutech-development-data.json.tmp
+
+.next/
+out/
+dist/
+build/
+
 .env
 .env.local
-# Logs
-*.log
+.env.development
+.env.production
+.env.test
+.env*.local
+
+!.env.example
+
+coverage/
+
+*.tsbuildinfo
+
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-# OS files
+pnpm-debug.log*
+
+.vscode/
+.idea/
+
 .DS_Store
 Thumbs.db
-# Optional VS Code settings
-.vscode/
-# Temporary files
-tmp/
-temp/
-# Ignore seeders
+
+.wrangler/
+.dev.vars

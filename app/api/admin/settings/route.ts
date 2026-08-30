@@ -1,0 +1,8 @@
+import { NextResponse } from "next/server";
+import { getAdminRequestContext } from "@/lib/auth/admin-server";
+import { listAdminSettings, saveAdminSetting } from "@/lib/repositories/settings";
+import { adminSettingSchema } from "@/lib/validation/admin-settings";
+import { recordAdminActivity } from "@/lib/repositories/activity";
+export const dynamic = "force-dynamic";
+export async function GET(request: Request) { if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 }); try { return NextResponse.json({ ok: true, settings: await listAdminSettings() }); } catch (error) { return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not load settings." }, { status: 500 }); } }
+export async function PUT(request: Request) { if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 }); const parsed = adminSettingSchema.safeParse(await request.json()); if (!parsed.success) return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message || "Check the setting values." }, { status: 400 }); try { const setting = await saveAdminSetting(parsed.data.key, parsed.data.value); await recordAdminActivity({ action: "updated", entityType: "setting", entityId: setting.key, summary: `Updated operational setting: ${setting.key}` }); return NextResponse.json({ ok: true, setting }); } catch (error) { return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not save settings." }, { status: 500 }); } }

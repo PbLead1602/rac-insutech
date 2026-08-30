@@ -1,0 +1,8 @@
+import { NextResponse } from "next/server";
+import { getAdminRequestContext } from "@/lib/auth/admin-server";
+import { createAdminDocument, listAdminDocuments } from "@/lib/repositories/documents";
+import { adminDocumentCreateSchema } from "@/lib/validation/admin-documents";
+import { recordAdminActivity } from "@/lib/repositories/activity";
+export const dynamic = "force-dynamic";
+export async function GET(request: Request) { if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 }); try { return NextResponse.json({ ok: true, documents: await listAdminDocuments(new URL(request.url).searchParams.get("q") || "") }); } catch (error) { return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not load documents." }, { status: 500 }); } }
+export async function POST(request: Request) { if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 }); const parsed = adminDocumentCreateSchema.safeParse(await request.json()); if (!parsed.success) return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message || "Check the document details." }, { status: 400 }); try { const result = await createAdminDocument(parsed.data); await recordAdminActivity({ action: "created", entityType: "document", entityId: result.document.id, summary: `Registered document: ${result.document.title}` }); return NextResponse.json({ ok: true, document: result.document }, { status: 201 }); } catch (error) { return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not create the document." }, { status: 500 }); } }

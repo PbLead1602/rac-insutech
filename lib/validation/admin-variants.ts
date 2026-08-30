@@ -1,0 +1,4 @@
+import { z } from "zod";
+const number = z.coerce.number().finite().positive().optional();
+const base = z.object({ productId: z.string().min(1).max(160), name: z.string().trim().min(2).max(180), sku: z.string().trim().max(120).optional().default(""), thickness: z.string().trim().max(120).optional().default(""), dimensions: z.string().trim().max(240).optional().default(""), density: z.string().trim().max(120).optional().default(""), materialClass: z.string().trim().max(120).optional().default(""), lamination: z.string().trim().max(120).optional().default(""), widthM: number, lengthM: number, rollAreaM2: number, tubeLengthMm: number, tubesPerCarton: z.coerce.number().int().positive().optional(), packRunningMetres: number, active: z.boolean().default(true) });
+export const adminVariantCreateSchema=base;export const adminVariantPatchSchema=base.partial();
