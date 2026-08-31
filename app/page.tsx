@@ -440,6 +440,8 @@ function QuoteModal({ initialProduct, onClose }: { initialProduct: string; onClo
       router.push(`/account/continue?intent=${encodeURIComponent(result.continuationToken)}`);
     } catch (submissionError) {
       setError(submissionError instanceof Error ? submissionError.message : "We could not save your enquiry.");
+      setTurnstileToken("");
+      window.dispatchEvent(new Event("rac:turnstile-reset"));
     } finally {
       setBusy(false);
     }

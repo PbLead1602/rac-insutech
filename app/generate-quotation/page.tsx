@@ -343,6 +343,8 @@ function GenerateQuotationWorkspace() {
       router.push(`/quotation/success/${result.quotation.id}?token=${encodeURIComponent(result.quotation.accessToken)}`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "We could not generate the quotation.");
+      setTurnstileToken("");
+      window.dispatchEvent(new Event("rac:turnstile-reset"));
     } finally {
       setSubmitting(false);
     }

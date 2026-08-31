@@ -35,7 +35,7 @@ export async function POST(request: Request) {
 
     const verification = await verifyTurnstile(
       parsed.data.turnstileToken,
-      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
+      request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
     );
     if (!verification.ok) return NextResponse.json({ ok: false, message: verification.reason }, { status: 400 });
 
