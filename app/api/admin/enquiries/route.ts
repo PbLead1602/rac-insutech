@@ -20,7 +20,7 @@ export async function POST(request: Request) {
   const parsed = adminEnquiryCreateSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message || "Check the enquiry details." }, { status: 400 });
   try {
-    const result = await createEnquiry({ ...parsed.data, turnstileToken: "" });
+    const result = await createEnquiry(parsed.data);
     return NextResponse.json({ ok: true, enquiry: result.enquiry }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not create the enquiry." }, { status: 500 });

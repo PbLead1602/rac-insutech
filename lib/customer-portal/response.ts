@@ -4,7 +4,7 @@ import type { CustomerRevisionRequest, EnquiryRecord, QuotationRecord } from "@/
 
 /** Removes Admin-only fields before a record crosses the customer API boundary. */
 export function toCustomerEnquiry(enquiry: EnquiryRecord) {
-  const { accountId, customerId, projectId, followUpAt, followUpNote, internalNotes, lostReason, turnstileToken, ...safeEnquiry } = enquiry;
+  const { accountId, customerId, projectId, followUpAt, followUpNote, internalNotes, lostReason, ...safeEnquiry } = enquiry;
   return safeEnquiry;
 }
 

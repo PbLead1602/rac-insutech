@@ -69,6 +69,29 @@ export async function signUpCustomer(input: { fullName: string; companyName?: st
   saveMockSession(data.account, data.accessToken); return { requiresEmailVerification: false, accountId: data.account.id };
 }
 
+/**
+ * The email used to register is the customer User ID. Reset responses stay
+ * deliberately generic so this screen cannot reveal whether an email belongs
+ * to an RAC account.
+ */
+export async function requestCustomerPasswordReset(email: string, intent?: string) {
+  const client = getSupabaseBrowserClient();
+  if (!client) throw new Error("Password-reset email is available when Supabase production authentication is configured.");
+  const redirect = new URL("/account/reset-password", window.location.origin);
+  if (intent) redirect.searchParams.set("intent", intent);
+  const { error } = await client.auth.resetPasswordForEmail(email.trim(), { redirectTo: redirect.toString() });
+  if (error) throw new Error(error.message || "Could not send the password-reset email.");
+}
+
+export async function updateCustomerPassword(password: string) {
+  const client = getSupabaseBrowserClient();
+  if (!client) throw new Error("Password updates are available when Supabase production authentication is configured.");
+  if (password.length < 8) throw new Error("Use a password of at least 8 characters.");
+  const { error } = await client.auth.updateUser({ password });
+  if (error) throw new Error(error.message || "Could not update your password.");
+  await client.auth.signOut();
+}
+
 export async function getCustomerSession() {
   const client = getSupabaseBrowserClient();
   if (client) { const { data: { user } } = await client.auth.getUser(); return user ? { accountId: user.id, email: user.email || "", isMock: false } : null; }

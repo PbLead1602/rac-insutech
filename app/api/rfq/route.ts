@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { createEnquiry } from "@/lib/repositories/enquiries";
 import { createEnquiryContinuation } from "@/lib/repositories/customer-accounts";
 import { sendRfqNotifications } from "@/lib/services/brevo";
-import { verifyTurnstile } from "@/lib/services/turnstile";
 import { rfqSchema } from "@/lib/validation/rfq";
 
 export const runtime = "nodejs";
@@ -34,13 +33,8 @@ export async function POST(request: Request) {
       );
     }
 
-    const verification = await verifyTurnstile(
-      payload.data.turnstileToken,
-      request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
-    );
-    if (!verification.ok) {
-      return NextResponse.json({ ok: false, message: verification.reason }, { status: 400 });
-    }
+    // Enquiries are intentionally open to every visitor. Email confirmation
+    // happens only when a visitor chooses to register for an account.
 
     const attachmentValue = formData.get("attachment");
     let attachment: { name: string; type: string; size: number; buffer: Buffer } | undefined;
@@ -94,7 +88,7 @@ export async function POST(request: Request) {
       enquiryNumber: enquiry.enquiryNumber,
       continuationToken: continuation.token,
       message: "Thank you — RAC’s technical team will be in touch shortly.",
-      integrations: { storage: storageMode, email: email.mode, captcha: verification.mode },
+      integrations: { storage: storageMode, email: email.mode },
     });
   } catch (error) {
     console.error("RFQ submission failed", error);

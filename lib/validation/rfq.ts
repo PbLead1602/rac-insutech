@@ -21,7 +21,6 @@ export const rfqSchema = z.object({
   customerType: z.enum(["end_user", "contractor", "consultant", "dealer", "other"]).optional().default("end_user"),
   deliveryPreference: z.string().trim().max(180).optional().default(""),
   message: optionalText,
-  turnstileToken: z.string().trim().max(4000).optional().default(""),
 });
 
 export type RfqPayload = z.infer<typeof rfqSchema>;

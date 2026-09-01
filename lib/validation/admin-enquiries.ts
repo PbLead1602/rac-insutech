@@ -15,4 +15,4 @@ export const adminEnquiryPatchSchema = z.object({
 
 export const adminEnquiryNoteSchema = z.object({ note: z.string().trim().min(1, "Enter an internal note.").max(5000) });
 
-export const adminEnquiryCreateSchema = rfqSchema.omit({ turnstileToken: true });
+export const adminEnquiryCreateSchema = rfqSchema;

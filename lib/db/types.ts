@@ -21,7 +21,6 @@ export type RfqInput = {
   customerType?: "end_user" | "contractor" | "consultant" | "dealer" | "other";
   deliveryPreference?: string;
   message?: string;
-  turnstileToken?: string;
 };
 
 export type EnquiryRecord = RfqInput & {
