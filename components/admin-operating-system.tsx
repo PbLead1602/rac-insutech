@@ -6,7 +6,6 @@ import { usePathname, useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import { Activity, Archive, ArrowRight, BellRing, BookOpen, Boxes, BriefcaseBusiness, Building2, ChevronLeft, ChevronRight, ClipboardList, FileText, FolderCog, GalleryVerticalEnd, HandCoins, LayoutDashboard, LogOut, Menu, PackagePlus, Plus, Search, Settings, ShieldCheck, SlidersHorizontal, UserCheck, UsersRound } from "lucide-react";
 import { adminFetch, getAdminSession, signInAdmin, signOutAdmin, type AdminSession } from "@/lib/auth/admin-client";
-import { getAdminSupabaseBrowserClient } from "@/lib/supabase/client";
 import AdminEnquiriesPanel from "@/components/admin-enquiries-panel";
 import AdminQuotationsPanel from "@/components/admin-quotations-panel";
 import AdminCustomersPanel from "@/components/admin-customers-panel";
@@ -73,11 +72,6 @@ const indiaDateKey = (value: Date | string) => {
   const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value || "";
   return `${part("year")}-${part("month")}-${part("day")}`;
 };
-const todayInIndiaRange = () => {
-  const [year, month, day] = indiaDateKey(new Date()).split("-").map(Number);
-  const start = Date.UTC(year, month - 1, day) - (5.5 * 60 * 60 * 1000);
-  return { start: new Date(start).toISOString(), end: new Date(start + (24 * 60 * 60 * 1000)).toISOString() };
-};
 const indiaDateAfterDays = (dateKey: string, days: number) => {
   const [year, month, day] = dateKey.split("-").map(Number);
   return new Date(Date.UTC(year, month - 1, day) + (days * 24 * 60 * 60 * 1000)).toISOString().slice(0, 10);
@@ -119,26 +113,17 @@ function sectionFromPath(pathname: string): AdminSection {
 }
 
 async function loadDashboard(): Promise<DashboardData> {
-  const client = getAdminSupabaseBrowserClient();
-  if (!client) {
-    const [quotesResponse, enquiriesResponse, productsResponse, accountsResponse] = await Promise.all([adminFetch("/api/admin/quotations", { cache: "no-store" }), adminFetch("/api/admin/enquiries", { cache: "no-store" }), adminFetch("/api/admin/products", { cache: "no-store" }), adminFetch("/api/admin/customer-accounts?status=pending_admin_approval", { cache: "no-store" })]);
-    const quoteData = quotesResponse.ok ? await quotesResponse.json() as { quotations?: Array<{ id: string; quoteNumber: string; customer: { company: string }; total: number; createdAt: string; status: string; validUntil?: string; followUpAt?: string }> } : {};
-    const enquiryData = enquiriesResponse.ok ? await enquiriesResponse.json() as { enquiries?: Enquiry[] } : {};
-    const productData = productsResponse.ok ? await productsResponse.json() as { products?: Array<{ id: string }> } : {};
-    const accountData = accountsResponse.ok ? await accountsResponse.json() as { accounts?: Array<{ id: string }> } : {};
-    const quotations = quoteData.quotations || []; const enquiries = enquiryData.enquiries || []; const products = productData.products || []; const today = indiaDateKey(new Date());
-    const newEnquiries = enquiries.filter((item) => indiaDateKey(item.createdAt) === today).length;
-    const openQuotes = quotations.filter((item) => isOpenQuotation(item.status)).length;
-    const pendingApprovals = accountData.accounts?.length || 0;
-    const quoteMetrics = quotationDashboardMetrics(quotations);
-    return { products: products.length, enquiries: enquiries.length, quotations: quotations.length, pendingApprovals, quotedValue: quotations.reduce((total, item) => total + Number(item.total || 0), 0), ...quoteMetrics, recent: enquiries.slice(0, 5), recentQuotations: quotations.slice(0, 6).map((item) => ({ ...item, company: item.customer.company })), attention: [{ label: "New enquiries", value: newEnquiries, tone: "today", href: "/admin/enquiries", detail: "Review the latest website requirements." }, { label: "Open quotations", value: openQuotes, tone: "info", href: "/admin/quotations", detail: "Review, send or schedule a follow-up." }, { label: "Follow-ups due", value: quoteMetrics.followUpsDue, tone: "today", href: "/admin/quotations", detail: "Follow-ups scheduled for today or overdue." }, { label: "Rates requiring review", value: 0, tone: "critical", href: "/admin/rates", detail: "Rate expiry monitoring activates after rate import." }, { label: "Customer approvals", value: pendingApprovals, tone: "critical", href: "/admin/account-approvals", detail: "Verify registered accounts before enabling quotation access." }] };
-  }
-  const todayRange = todayInIndiaRange();
-  const [productResult, enquiryResult, todayEnquiryResult, accountResult, quoteResult, recentEnquiries, recentQuotes] = await Promise.all([client.from("products").select("id", { count: "exact", head: true }), client.from("enquiries").select("id", { count: "exact", head: true }), client.from("enquiries").select("id", { count: "exact", head: true }).gte("created_at", todayRange.start).lt("created_at", todayRange.end), client.from("customer_accounts").select("id", { count: "exact", head: true }).eq("approval_status", "pending_admin_approval"), client.from("quotations").select("id, total, status, created_at, valid_until, follow_up_at"), client.from("enquiries").select("name, product_name, created_at, status").order("created_at", { ascending: false }).limit(5), client.from("quotations").select("id, quote_number, customer, total, created_at, status").order("created_at", { ascending: false }).limit(6)]);
-  const quotes = quoteResult.data || []; const openQuotes = quotes.filter((quote) => isOpenQuotation(quote.status)).length;
-  const pendingApprovals = accountResult.count || 0;
-  const quoteMetrics = quotationDashboardMetrics(quotes.map((quote) => ({ createdAt: String(quote.created_at), validUntil: quote.valid_until ? String(quote.valid_until) : undefined, followUpAt: quote.follow_up_at ? String(quote.follow_up_at) : undefined, status: String(quote.status), total: Number(quote.total || 0) })));
-  return { products: productResult.count || 0, enquiries: enquiryResult.count || 0, quotations: quotes.length, pendingApprovals, quotedValue: quotes.reduce((total, quote) => total + Number(quote.total || 0), 0), ...quoteMetrics, recent: (recentEnquiries.data || []).map((item) => ({ name: item.name, product: item.product_name || "Technical requirement", createdAt: item.created_at, status: item.status })), recentQuotations: (recentQuotes.data || []).map((item) => ({ id: item.id, quoteNumber: item.quote_number, company: (item.customer as { company?: string })?.company || "Customer not specified", total: Number(item.total), createdAt: item.created_at, status: item.status })), attention: [{ label: "New enquiries", value: todayEnquiryResult.count || 0, tone: "today", href: "/admin/enquiries", detail: "Review the latest website requirements." }, { label: "Open quotations", value: openQuotes, tone: "info", href: "/admin/quotations", detail: "Review, send or schedule a follow-up." }, { label: "Follow-ups due", value: quoteMetrics.followUpsDue, tone: "today", href: "/admin/quotations", detail: "Follow-ups scheduled for today or overdue." }, { label: "Rates requiring review", value: 0, tone: "critical", href: "/admin/rates", detail: "Rate expiry monitoring activates after rate import." }, { label: "Customer approvals", value: pendingApprovals, tone: "critical", href: "/admin/account-approvals", detail: "Verify registered accounts before enabling quotation access." }] };
+  const [quotesResponse, enquiriesResponse, productsResponse, accountsResponse] = await Promise.all([adminFetch("/api/admin/quotations", { cache: "no-store" }), adminFetch("/api/admin/enquiries", { cache: "no-store" }), adminFetch("/api/admin/products", { cache: "no-store" }), adminFetch("/api/admin/customer-accounts?status=pending_admin_approval", { cache: "no-store" })]);
+  const quoteData = quotesResponse.ok ? await quotesResponse.json() as { quotations?: Array<{ id: string; quoteNumber: string; customer: { company: string }; total: number; createdAt: string; status: string; validUntil?: string; followUpAt?: string }> } : {};
+  const enquiryData = enquiriesResponse.ok ? await enquiriesResponse.json() as { enquiries?: Enquiry[] } : {};
+  const productData = productsResponse.ok ? await productsResponse.json() as { products?: Array<{ id: string }> } : {};
+  const accountData = accountsResponse.ok ? await accountsResponse.json() as { accounts?: Array<{ id: string }> } : {};
+  const quotations = quoteData.quotations || []; const enquiries = enquiryData.enquiries || []; const products = productData.products || []; const today = indiaDateKey(new Date());
+  const newEnquiries = enquiries.filter((item) => indiaDateKey(item.createdAt) === today).length;
+  const openQuotes = quotations.filter((item) => isOpenQuotation(item.status)).length;
+  const pendingApprovals = accountData.accounts?.length || 0;
+  const quoteMetrics = quotationDashboardMetrics(quotations);
+  return { products: products.length, enquiries: enquiries.length, quotations: quotations.length, pendingApprovals, quotedValue: quotations.reduce((total, item) => total + Number(item.total || 0), 0), ...quoteMetrics, recent: enquiries.slice(0, 5), recentQuotations: quotations.slice(0, 6).map((item) => ({ ...item, company: item.customer.company })), attention: [{ label: "New enquiries", value: newEnquiries, tone: "today", href: "/admin/enquiries", detail: "Review the latest website requirements." }, { label: "Open quotations", value: openQuotes, tone: "info", href: "/admin/quotations", detail: "Review, send or schedule a follow-up." }, { label: "Follow-ups due", value: quoteMetrics.followUpsDue, tone: "today", href: "/admin/quotations", detail: "Follow-ups scheduled for today or overdue." }, { label: "Rates requiring review", value: 0, tone: "critical", href: "/admin/rates", detail: "Rate expiry monitoring activates after rate import." }, { label: "Customer approvals", value: pendingApprovals, tone: "critical", href: "/admin/account-approvals", detail: "Verify registered accounts before enabling quotation access." }] };
 }
 
 export default function AdminOperatingSystem() {
