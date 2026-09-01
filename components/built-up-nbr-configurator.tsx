@@ -5,7 +5,13 @@ import { ArrowDown, ArrowUp, Plus, Trash2 } from "lucide-react";
 import { calculateBuiltUpCylinderInsulation, thicknessMmFromRateCardLabel, type BuiltUpNbrSelection } from "@/lib/quotations/built-up-nbr";
 import { quotationVariants, type QuoteVariant } from "@/lib/quotations/catalogue";
 
-export type CustomBuiltUpNbrDraft = BuiltUpNbrSelection & { id: string };
+/** Empty numeric values keep a new build-up visibly unconfigured. */
+export type CustomBuiltUpNbrDraft = Omit<BuiltUpNbrSelection, "baseDiameterMm" | "pipeLengthM" | "requiredTotalThicknessMm"> & {
+  id: string;
+  baseDiameterMm: number | "";
+  pipeLengthM: number | "";
+  requiredTotalThicknessMm: number | "";
+};
 type ApprovedRate = { rate: number; rateUnit: string };
 
 const nbrSheetVariants = quotationVariants.filter((variant) => variant.productId === "nitrile-rubber-sheet");
@@ -13,19 +19,16 @@ const materialClasses = [...new Set(nbrSheetVariants.map((variant) => variant.ma
 const formatArea = (value: number) => `${value.toFixed(2)} m²`;
 const initialClass = materialClasses.includes("Class O") ? "Class O" : materialClasses[0] || "";
 
-function firstVariant(materialClass: string) {
-  return nbrSheetVariants.find((variant) => variant.materialClass === materialClass);
-}
-
 function draftForClass(materialClass = initialClass): CustomBuiltUpNbrDraft {
-  const variant = firstVariant(materialClass);
   return {
     id: `built-up-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     materialClass,
-    baseDiameterMm: 200,
-    pipeLengthM: 10,
-    requiredTotalThicknessMm: 25,
-    layers: variant ? [{ variantId: variant.id }] : [],
+    baseDiameterMm: "",
+    pipeLengthM: "",
+    requiredTotalThicknessMm: "",
+    // Keep the first layer blank until the user chooses its exact rate-card
+    // thickness and facing. No configuration is implied by default.
+    layers: [{ variantId: "" }],
   };
 }
 
@@ -66,7 +69,7 @@ export function BuiltUpNbrConfigurator({
   }, [editingItem, onEditConsumed]);
 
   useEffect(() => {
-    onPreviewVariantIdsChange?.(draft.layers.map((layer) => layer.variantId));
+    onPreviewVariantIdsChange?.(draft.layers.map((layer) => layer.variantId).filter(Boolean));
   }, [draft.layers, onPreviewVariantIdsChange]);
 
   const layersWithVariants = draft.layers.map((layer) => ({ layer, variant: nbrSheetVariants.find((item) => item.id === layer.variantId) }));
@@ -94,16 +97,13 @@ export function BuiltUpNbrConfigurator({
   const allRatesAvailable = layersWithVariants.length > 0 && layersWithVariants.every(({ layer }) => rates[layer.variantId]);
 
   const setClass = (materialClass: string) => {
-    const variant = firstVariant(materialClass);
-    setDraft((current) => ({ ...current, materialClass, layers: variant ? current.layers.map((_, index) => ({ variantId: index === 0 ? variant.id : variant.id })) : [] }));
+    setDraft((current) => ({ ...current, materialClass, layers: current.layers.map(() => ({ variantId: "" })) }));
     setMessage("");
   };
   const updateLayer = (index: number, variantId: string) => setDraft((current) => ({ ...current, layers: current.layers.map((layer, layerIndex) => layerIndex === index ? { variantId } : layer) }));
   const addLayer = () => {
     if (draft.layers.length >= 5) return setMessage("A Custom Built-Up NBR item can contain up to 5 layers.");
-    const variant = variants[0];
-    if (!variant) return;
-    setDraft((current) => ({ ...current, layers: [...current.layers, { variantId: variant.id }] }));
+    setDraft((current) => ({ ...current, layers: [...current.layers, { variantId: "" }] }));
     setMessage("");
   };
   const moveLayer = (index: number, direction: -1 | 1) => setDraft((current) => {
@@ -128,14 +128,14 @@ export function BuiltUpNbrConfigurator({
     <p className="built-up-nbr-intro">Use sheet layers for large or non-standard pipe diameters. Standard Nitrile Tube quotations remain unchanged.</p>
     <div className="built-up-nbr-grid">
       <label>Material class<select value={draft.materialClass} onChange={(event) => setClass(event.target.value)}>{materialClasses.map((value) => <option key={value}>{value}</option>)}</select></label>
-      <label>Pipe diameter (mm)<input type="number" min="0.01" max="10000" step="0.01" value={draft.baseDiameterMm} onChange={(event) => setDraft((current) => ({ ...current, baseDiameterMm: Number(event.target.value) }))} /></label>
-      <label>Pipe length (m)<input type="number" min="0.01" max="100000" step="0.01" value={draft.pipeLengthM} onChange={(event) => setDraft((current) => ({ ...current, pipeLengthM: Number(event.target.value) }))} /></label>
-      <label>Required total thickness (mm)<input type="number" min="0.01" max="1000" step="0.01" value={draft.requiredTotalThicknessMm} onChange={(event) => setDraft((current) => ({ ...current, requiredTotalThicknessMm: Number(event.target.value) }))} /></label>
+      <label>Pipe diameter (mm)<input type="number" min="0.01" max="10000" step="0.01" value={draft.baseDiameterMm} placeholder="e.g. 200" onChange={(event) => setDraft((current) => ({ ...current, baseDiameterMm: event.target.value === "" ? "" : Number(event.target.value) }))} /></label>
+      <label>Pipe length (m)<input type="number" min="0.01" max="100000" step="0.01" value={draft.pipeLengthM} placeholder="e.g. 10" onChange={(event) => setDraft((current) => ({ ...current, pipeLengthM: event.target.value === "" ? "" : Number(event.target.value) }))} /></label>
+      <label>Required total thickness (mm)<input type="number" min="0.01" max="1000" step="0.01" value={draft.requiredTotalThicknessMm} placeholder="e.g. 50" onChange={(event) => setDraft((current) => ({ ...current, requiredTotalThicknessMm: event.target.value === "" ? "" : Number(event.target.value) }))} /></label>
     </div>
     <div className="built-up-nbr-layers"><div><h4>Insulation layers</h4><span>Layer order determines the next layer’s mean diameter.</span></div>{draft.layers.map((layer, index) => {
       const variant = nbrSheetVariants.find((item) => item.id === layer.variantId);
       const calculated = !(preview instanceof Error) && preview ? preview.layers[index] : undefined;
-      return <article key={`${layer.variantId}-${index}`} className="built-up-nbr-layer"><div className="built-up-nbr-layer-title"><b>Layer {index + 1}</b><div><button type="button" disabled={index === 0} onClick={() => moveLayer(index, -1)} aria-label={`Move layer ${index + 1} up`}><ArrowUp size={15} /></button><button type="button" disabled={index === draft.layers.length - 1} onClick={() => moveLayer(index, 1)} aria-label={`Move layer ${index + 1} down`}><ArrowDown size={15} /></button><button type="button" disabled={draft.layers.length === 1} onClick={() => setDraft((current) => ({ ...current, layers: current.layers.filter((_, layerIndex) => layerIndex !== index) }))} aria-label={`Remove layer ${index + 1}`}><Trash2 size={15} /></button></div></div><label>Thickness and facing<select value={layer.variantId} onChange={(event) => updateLayer(index, event.target.value)}>{variants.map((option) => <option key={option.id} value={option.id}>{optionLabel(option)}</option>)}</select></label><div className="built-up-nbr-layer-result"><span>{variant ? `${variant.thickness} · ${variant.lamination}` : "Choose a valid sheet configuration"}</span>{calculated && <strong>{formatArea(calculated.quotedAreaM2)} <small>quoted area</small></strong>}</div>{calculated && <p>Mean Ø {calculated.meanDiameterMm.toFixed(2)} mm · Net area {formatArea(calculated.netAreaM2)}{calculated.amount !== undefined ? ` · ${new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(calculated.amount)}` : ""}</p>}</article>;
+      return <article key={`${layer.variantId}-${index}`} className="built-up-nbr-layer"><div className="built-up-nbr-layer-title"><b>Layer {index + 1}</b><div><button type="button" disabled={index === 0} onClick={() => moveLayer(index, -1)} aria-label={`Move layer ${index + 1} up`}><ArrowUp size={15} /></button><button type="button" disabled={index === draft.layers.length - 1} onClick={() => moveLayer(index, 1)} aria-label={`Move layer ${index + 1} down`}><ArrowDown size={15} /></button><button type="button" disabled={draft.layers.length === 1} onClick={() => setDraft((current) => ({ ...current, layers: current.layers.filter((_, layerIndex) => layerIndex !== index) }))} aria-label={`Remove layer ${index + 1}`}><Trash2 size={15} /></button></div></div><label>Thickness and facing<select value={layer.variantId} onChange={(event) => updateLayer(index, event.target.value)}><option value="" disabled>Select thickness and facing</option>{variants.map((option) => <option key={option.id} value={option.id}>{optionLabel(option)}</option>)}</select></label><div className="built-up-nbr-layer-result"><span>{variant ? `${variant.thickness} · ${variant.lamination}` : "Choose a valid sheet configuration"}</span>{calculated && <strong>{formatArea(calculated.quotedAreaM2)} <small>quoted area</small></strong>}</div>{calculated && <p>Mean Ø {calculated.meanDiameterMm.toFixed(2)} mm · Net area {formatArea(calculated.netAreaM2)}{calculated.amount !== undefined ? ` · ${new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(calculated.amount)}` : ""}</p>}</article>;
     })}</div>
     <div className="built-up-nbr-actions"><button type="button" onClick={addLayer} disabled={draft.layers.length >= 5}><Plus size={16} /> Add layer</button><span>Wastage: {wastagePercent.toFixed(2)}% (controlled in Admin quotation settings)</span></div>
     <div className={`built-up-nbr-summary ${preview instanceof Error ? "invalid" : ""}`}>{preview instanceof Error ? <p>{preview.message}</p> : preview ? <><span>Configured thickness <b>{preview.configuredTotalThicknessMm} / {preview.requiredTotalThicknessMm} mm ✓</b></span><span>Finished OD <b>{preview.finishedOuterDiameterMm.toFixed(2)} mm</b></span><span>Total sheet consumption <b>{formatArea(preview.totalQuotedAreaM2)}</b></span>{preview.basicAmount !== undefined && <strong>Basic value <b>{new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR" }).format(preview.basicAmount)}</b></strong>}</> : <p>Enter valid dimensions and layer combinations to calculate the build-up.</p>}</div>

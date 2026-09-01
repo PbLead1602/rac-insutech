@@ -275,7 +275,7 @@ function GenerateQuotationWorkspace() {
       const variant = findQuoteVariant({ productId: row.productId, ...row.configuration });
       return variant ? [variant.id] : [];
     }),
-    ...customBuiltUpItems.flatMap((item) => item.layers.map((layer) => layer.variantId)),
+    ...customBuiltUpItems.flatMap((item) => item.layers.map((layer) => layer.variantId).filter(Boolean)),
     ...customPreviewVariantIds,
   ], [configurationRows, customBuiltUpItems, customPreviewVariantIds]);
   const configuredVariantKey = configuredVariantIds.join("|");
@@ -305,9 +305,9 @@ function GenerateQuotationWorkspace() {
       });
       const calculation = calculateBuiltUpCylinderInsulation({
         materialClass: item.materialClass,
-        baseDiameterMm: item.baseDiameterMm,
-        pipeLengthM: item.pipeLengthM,
-        requiredTotalThicknessMm: item.requiredTotalThicknessMm,
+        baseDiameterMm: Number(item.baseDiameterMm),
+        pipeLengthM: Number(item.pipeLengthM),
+        requiredTotalThicknessMm: Number(item.requiredTotalThicknessMm),
         wastagePercent: builtUpNbrWastagePercent,
         layers,
       });
@@ -486,7 +486,7 @@ function GenerateQuotationWorkspace() {
             </table>
           </div>
           <div className="quotation-config-actions"><span>{configurationRows.length} configuration line{configurationRows.length === 1 ? "" : "s"}</span><span>Select options in Multiple selection to add configuration rows.</span></div>
-          {customBuiltUpEntries.length > 0 && <section className="built-up-nbr-basket" aria-labelledby="built-up-basket-title"><div><p className="catalogue-kicker"><span /> CUSTOM BUILT-UP NBR</p><h3 id="built-up-basket-title">Grouped custom insulation items</h3></div>{customBuiltUpEntries.map((entry) => <article key={entry.item.id}><div><strong>Custom {entry.item.baseDiameterMm} mm Dia × {entry.item.requiredTotalThicknessMm} mm Built-Up NBR</strong><span>{entry.item.pipeLengthM} m pipe length · {entry.item.materialClass}</span></div><ul>{entry.item.layers.map((layer, index) => { const variant = getQuotationVariant(layer.variantId); const calculated = entry.calculation?.layers[index]; return <li key={`${layer.variantId}-${index}`}>Layer {index + 1}: {variant?.thickness || "Unknown"} {variant?.lamination || ""}{calculated ? ` — ${calculated.quotedAreaM2.toFixed(2)} m²` : ""}</li>; })}</ul><div className="built-up-nbr-basket-total"><span>{entry.calculation ? `Finished OD ${entry.calculation.finishedOuterDiameterMm.toFixed(2)} mm · ${entry.calculation.totalQuotedAreaM2.toFixed(2)} m² sheet` : entry.error}</span><strong>{entry.calculation?.basicAmount !== undefined ? currency.format(entry.calculation.basicAmount) : "Rate pending"}</strong></div><footer><button type="button" onClick={() => setEditingBuiltUpItem(entry.item)}>Edit</button><button type="button" onClick={() => setCustomBuiltUpItems((current) => [...current, { ...entry.item, id: `built-up-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, layers: entry.item.layers.map((layer) => ({ ...layer })) }])}>Duplicate</button><button type="button" onClick={() => setCustomBuiltUpItems((current) => current.filter((item) => item.id !== entry.item.id))}><Trash2 size={14} /> Remove</button></footer></article>)}</section>}
+          {customBuiltUpEntries.length > 0 && <section className="built-up-nbr-basket" aria-labelledby="built-up-basket-title"><div><p className="catalogue-kicker"><span /> CUSTOM BUILT-UP NBR</p><h3 id="built-up-basket-title">Grouped custom insulation items</h3></div>{customBuiltUpEntries.map((entry) => <article key={entry.item.id}><div><strong>Custom {entry.item.baseDiameterMm} mm Dia × {entry.item.requiredTotalThicknessMm} mm Built-Up NBR</strong><span>{entry.item.pipeLengthM} m pipe length · {entry.item.materialClass}</span></div><div className="built-up-nbr-layer-pricing" aria-label="Layer-wise supply quantity, rate and amount">{entry.item.layers.map((layer, index) => { const variant = getQuotationVariant(layer.variantId); const calculated = entry.calculation?.layers[index]; return <div key={`${layer.variantId}-${index}`}><strong>Layer {index + 1}<small>{variant ? `${variant.thickness} · ${variant.lamination}` : "Sheet configuration pending"}</small></strong><span>Supply qty <b>{calculated ? `${calculated.quotedAreaM2.toFixed(2)} m²` : "—"}</b></span><span>Rate <b>{calculated?.rate !== undefined ? `${currency.format(calculated.rate)} / m²` : "Pending"}</b></span><span>Amount <b>{calculated?.amount !== undefined ? currency.format(calculated.amount) : "Pending"}</b></span></div>; })}</div><div className="built-up-nbr-basket-total"><span>{entry.calculation ? `Finished OD ${entry.calculation.finishedOuterDiameterMm.toFixed(2)} mm · ${entry.calculation.totalQuotedAreaM2.toFixed(2)} m² sheet` : entry.error}</span><strong>Grouped total: {entry.calculation?.basicAmount !== undefined ? currency.format(entry.calculation.basicAmount) : "Rate pending"}</strong></div><footer><button type="button" onClick={() => setEditingBuiltUpItem(entry.item)}>Edit</button><button type="button" onClick={() => setCustomBuiltUpItems((current) => [...current, { ...entry.item, id: `built-up-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, layers: entry.item.layers.map((layer) => ({ ...layer })) }])}>Duplicate</button><button type="button" onClick={() => setCustomBuiltUpItems((current) => current.filter((item) => item.id !== entry.item.id))}><Trash2 size={14} /> Remove</button></footer></article>)}</section>}
         </section>
 
         <aside className="quotation-summary-card">

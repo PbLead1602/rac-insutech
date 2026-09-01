@@ -102,15 +102,28 @@ function drawQuotationPage(quotation: QuotationRecord, items: QuotationRecord["i
   text(command, ["RATE"], 419, y - 12, 7.2, "1 1 1 rg");
   text(command, ["AMOUNT"], 506, y - 12, 7.2, "1 1 1 rg");
   items.forEach((item, index) => {
+    const custom = item.customBuiltUp;
+    // A custom built-up group retains a single product item while exposing the
+    // quantity, rate and amount of every actual NBR Sheet layer.
+    const rowHeight = custom ? Math.max(48, 28 + custom.layers.length * 14) : 40;
     // The first row clears the 18 pt table heading; later rows keep a 2 pt gap.
-    // Without the larger first offset, that row paints over the heading bar.
-    y -= index === 0 ? 58 : 42;
-    command.push("q", "1 1 1 rg", `48 ${y} 516 40 re`, "f", "Q", "q", "0.78 0.86 0.93 RG", "0.4 w", `48 ${y} 516 40 re`, "S", "Q");
-    text(command, [String(itemOffset + index + 1)], 55, y + 28, 7.3, "0.08 0.18 0.32 rg");
-    text(command, [item.productName, ...lines(item.configuration, 45)], 80, y + 28, 7.3, "0.08 0.18 0.32 rg", 8.4);
-    text(command, lines(item.technicalQuantity, 17), 334, y + 28, 7.2, "0.08 0.18 0.32 rg", 8.3);
-    text(command, [money(item.rate), item.rateUnit], 419, y + 28, 6.8, "0.08 0.18 0.32 rg", 8);
-    text(command, [money(item.amount)], 506, y + 28, 7.3, "0.04 0.16 0.34 rg");
+    y -= index === 0 ? rowHeight + 18 : rowHeight + 2;
+    command.push("q", "1 1 1 rg", `48 ${y} 516 ${rowHeight} re`, "f", "Q", "q", "0.78 0.86 0.93 RG", "0.4 w", `48 ${y} 516 ${rowHeight} re`, "S", "Q");
+    const textY = y + rowHeight - 12;
+    text(command, [String(itemOffset + index + 1)], 55, textY, 7.3, "0.08 0.18 0.32 rg");
+    const productLines = custom
+      ? [item.productName, ...lines(item.configuration, 42), `Grouped basic total: ${money(item.amount)}`]
+      : [item.productName, ...lines(item.configuration, 45)];
+    text(command, productLines, 80, textY, 7.3, "0.08 0.18 0.32 rg", 8.4);
+    if (custom) {
+      text(command, custom.layers.map((layer) => `L${layer.layerNumber}: ${layer.quotedAreaM2.toFixed(2)} m2`), 334, textY, 7.1, "0.08 0.18 0.32 rg", 11.2);
+      text(command, custom.layers.map((layer) => `L${layer.layerNumber}: ${money(layer.rate)}/m2`), 419, textY, 6.65, "0.08 0.18 0.32 rg", 11.2);
+      text(command, custom.layers.map((layer) => `L${layer.layerNumber}: ${money(layer.amount)}`), 506, textY, 6.9, "0.04 0.16 0.34 rg", 11.2);
+    } else {
+      text(command, lines(item.technicalQuantity, 17), 334, textY, 7.2, "0.08 0.18 0.32 rg", 8.3);
+      text(command, [money(item.rate), item.rateUnit], 419, textY, 6.8, "0.08 0.18 0.32 rg", 8);
+      text(command, [money(item.amount)], 506, textY, 7.3, "0.04 0.16 0.34 rg");
+    }
   });
   if (isLastPage) {
     y -= 18;
