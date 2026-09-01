@@ -1,11 +1,6 @@
 import "server-only";
 
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import type { QuotationRecord } from "@/lib/db/types";
-
-type PdfImage = { width: number; height: number; data: Buffer };
-let cachedLogo: PdfImage | undefined;
 
 const safe = (value: string) => value.replace(/[()\\]/g, "\\$&").replace(/[^ -~]/g, "-");
 const money = (value: number) => `INR ${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -46,22 +41,6 @@ function lines(value: string, width = 80) {
   return result;
 }
 
-function logo() {
-  if (cachedLogo) return cachedLogo;
-  const image = readFileSync(join(process.cwd(), "public", "assets", "logo", "rac-logo.png"));
-  if (image.toString("hex", 0, 8) !== "89504e470d0a1a0a") throw new Error("RAC logo is not a PNG file.");
-  const width = image.readUInt32BE(16);
-  const height = image.readUInt32BE(20);
-  const chunks: Buffer[] = [];
-  for (let offset = 8; offset + 12 <= image.length;) {
-    const length = image.readUInt32BE(offset);
-    if (image.toString("ascii", offset + 4, offset + 8) === "IDAT") chunks.push(image.subarray(offset + 8, offset + 8 + length));
-    offset += length + 12;
-  }
-  cachedLogo = { width, height, data: Buffer.concat(chunks) };
-  return cachedLogo;
-}
-
 function text(command: string[], values: string[], x: number, y: number, size: number, color = "0.08 0.18 0.32 rg", leading = 10) {
   command.push("BT", `/F1 ${size} Tf`, color, `${x} ${y} Td`, `${leading} TL`);
   values.forEach((value) => command.push(`(${safe(value)}) Tj`, "T*"));
@@ -73,28 +52,18 @@ function stream(value: string | Buffer) {
   return Buffer.concat([Buffer.from(`<< /Length ${data.length} >>\nstream\n`), data, Buffer.from("\nendstream")]);
 }
 
-function imageObject(image: PdfImage) {
-  return Buffer.concat([
-    Buffer.from(`<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /DecodeParms << /Predictor 15 /Colors 3 /BitsPerComponent 8 /Columns ${image.width} >> /Length ${image.data.length} >>\nstream\n`),
-    image.data,
-    Buffer.from("\nendstream"),
-  ]);
-}
-
 function createPdf(contents: string[]) {
-  const racLogo = logo();
   const pageRefs = contents.map((_, index) => 3 + index * 2);
   const fontRef = 3 + contents.length * 2;
-  const logoRef = fontRef + 1;
   const objects: Array<string | Buffer> = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     `<< /Type /Pages /Kids [${pageRefs.map((reference) => `${reference} 0 R`).join(" ")}] /Count ${contents.length} >>`,
   ];
   contents.forEach((content, index) => {
     const pageRef = pageRefs[index];
-    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontRef} 0 R >> /XObject << /RacLogo ${logoRef} 0 R >> >> /Contents ${pageRef + 1} 0 R >>`, stream(content));
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontRef} 0 R >> >> /Contents ${pageRef + 1} 0 R >>`, stream(content));
   });
-  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>", imageObject(racLogo));
+  objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   const chunks: Buffer[] = [Buffer.from("%PDF-1.5\n%RAC\n")];
   const offsets = [0];
   let length = chunks[0].length;
@@ -115,7 +84,7 @@ function createPdf(contents: string[]) {
 function drawQuotationPage(quotation: QuotationRecord, items: QuotationRecord["items"], itemOffset: number, pageNumber: number, pageCount: number, includeCustomer: boolean, isLastPage: boolean) {
   const command: string[] = [];
   command.push("q", "0.97 0.99 1 rg", "0 0 612 792 re", "f", "Q");
-  command.push("q", "92 0 0 69 470 707 cm", "/RacLogo Do", "Q");
+  text(command, ["RAC INSUTECH"], 470, 752, 8.4, "0.02 0.36 0.69 rg");
   text(command, ["COMMERCIAL QUOTATION"], 48, 748, 10, "0.02 0.36 0.69 rg", 13);
   text(command, [quotation.quoteNumber], 48, 718, 21, "0.04 0.16 0.34 rg");
   text(command, [`Issued ${new Date(quotation.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} | Valid for ${quotation.validityDays} days | Page ${pageNumber} of ${pageCount}`], 48, 699, 8.2, "0.29 0.4 0.53 rg");

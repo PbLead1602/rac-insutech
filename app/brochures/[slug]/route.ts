@@ -1,11 +1,8 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { getProduct } from "@/lib/catalogue";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-type PdfPng = { width: number; height: number; compressedData: Buffer };
 type PdfPage = { width: number; height: number; content: string };
 type Product = NonNullable<ReturnType<typeof getProduct>>;
 type SummarySection = { title: string; lines: string[] };
@@ -15,7 +12,6 @@ type TechnicalRow =
 
 const portrait = { width: 612, height: 792 };
 const landscape = { width: 792, height: 612 };
-let cachedRacLogo: PdfPng | undefined;
 
 function pdfSafe(value: string) {
   return value
@@ -42,33 +38,9 @@ function wrap(text: string, length = 76) {
   return lines;
 }
 
-function getRacLogo(): PdfPng {
-  if (cachedRacLogo) return cachedRacLogo;
-  const png = readFileSync(join(process.cwd(), "public", "assets", "logo", "rac-logo.png"));
-  if (png.toString("hex", 0, 8) !== "89504e470d0a1a0a") throw new Error("RAC logo is not a PNG file.");
-  const width = png.readUInt32BE(16);
-  const height = png.readUInt32BE(20);
-  if (png[24] !== 8 || png[25] !== 2) throw new Error("RAC logo requires an 8-bit RGB PNG.");
-  const idat: Buffer[] = [];
-  for (let offset = 8; offset + 12 <= png.length;) {
-    const length = png.readUInt32BE(offset);
-    const type = png.toString("ascii", offset + 4, offset + 8);
-    if (type === "IDAT") idat.push(png.subarray(offset + 8, offset + 8 + length));
-    offset += length + 12;
-  }
-  if (!idat.length) throw new Error("RAC logo image data is missing.");
-  cachedRacLogo = { width, height, compressedData: Buffer.concat(idat) };
-  return cachedRacLogo;
-}
-
 function streamObject(content: string | Buffer) {
   const data = Buffer.isBuffer(content) ? content : Buffer.from(content, "utf8");
   return Buffer.concat([Buffer.from(`<< /Length ${data.length} >>\nstream\n`), data, Buffer.from("\nendstream")]);
-}
-
-function pngObject(image: PdfPng) {
-  const prefix = `<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /DecodeParms << /Predictor 15 /Colors 3 /BitsPerComponent 8 /Columns ${image.width} >> /Length ${image.compressedData.length} >>\nstream\n`;
-  return Buffer.concat([Buffer.from(prefix), image.compressedData, Buffer.from("\nendstream")]);
 }
 
 function addText(commands: string[], lines: string[], x: number, y: number, size: number, colour: string, leading = 10) {
@@ -79,28 +51,25 @@ function addText(commands: string[], lines: string[], x: number, y: number, size
 
 function addBrand(commands: string[], width: number, height: number, pageNumber: number, pageCount: number) {
   commands.push("q", "0.96 0.98 1 rg", `0 0 ${width} ${height} re`, "f", "Q");
-  commands.push("q", `128 0 0 96 ${width - 180} ${height - 126} cm`, "/RacLogo Do", "Q");
+  addText(commands, ["RAC INSUTECH"], width - 165, height - 38, 9.2, "0.025 0.31 0.63 rg");
   addText(commands, ["RAC INSUTECH | PRODUCT BRIEF"], 52, height - 38, 9.2, "0.025 0.31 0.63 rg");
   addText(commands, ["Insulate. Optimise. Perform."], 52, 29, 6.7, "0.04 0.43 0.65 rg");
   addText(commands, [`Page ${pageNumber} of ${pageCount}`], width - 105, 29, 6.7, "0.3 0.4 0.52 rg");
 }
 
 function createPdf(pages: PdfPage[]) {
-  const logo = getRacLogo();
   const pageRefs = pages.map((_, index) => 3 + index * 2);
   const fontRef = 3 + pages.length * 2;
-  const logoRef = fontRef + 1;
   const objects: Array<string | Buffer> = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     `<< /Type /Pages /Kids [${pageRefs.map((ref) => `${ref} 0 R`).join(" ")}] /Count ${pages.length} >>`,
   ];
   pages.forEach((page, index) => {
     const pageRef = pageRefs[index];
-    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page.width} ${page.height}] /Resources << /Font << /F1 ${fontRef} 0 R >> /XObject << /RacLogo ${logoRef} 0 R >> >> /Contents ${pageRef + 1} 0 R >>`);
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${page.width} ${page.height}] /Resources << /Font << /F1 ${fontRef} 0 R >> >> /Contents ${pageRef + 1} 0 R >>`);
     objects.push(streamObject(page.content));
   });
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
-  objects.push(pngObject(logo));
 
   const chunks: Buffer[] = [Buffer.from("%PDF-1.5\n%RAC\n", "utf8")];
   const offsets = [0];

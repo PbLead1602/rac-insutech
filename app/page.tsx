@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { FormEvent, useEffect, useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -410,8 +410,7 @@ function MobileMenu({ onClose, onQuote }: { onClose: () => void; onQuote: () => 
 function QuoteModal({ initialProduct, onClose }: { initialProduct: string; onClose: () => void }) {
   const [product, setProduct] = useState(initialProduct);
   const router = useRouter();
-  const submissionIdRef = useRef("");
-  if (!submissionIdRef.current && typeof crypto !== "undefined") submissionIdRef.current = crypto.randomUUID();
+  const [submissionId] = useState(() => globalThis.crypto?.randomUUID?.() || "");
   const [turnstileToken, setTurnstileToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -420,7 +419,7 @@ function QuoteModal({ initialProduct, onClose }: { initialProduct: string; onClo
     const form = event.currentTarget;
     if (!form.reportValidity()) return;
     const values = new FormData(form);
-    values.set("submissionId", submissionIdRef.current);
+    values.set("submissionId", submissionId);
     values.set("turnstileToken", turnstileToken);
     setBusy(true);
     setError("");
