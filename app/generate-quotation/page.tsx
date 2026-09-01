@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, FileText, MessageCircle, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { CatalogueFooter, CatalogueHeader } from "@/components/catalogue-header";
 import { TurnstileWidget } from "@/components/turnstile";
+import { BuiltUpNbrConfigurator, type CustomBuiltUpNbrDraft } from "@/components/built-up-nbr-configurator";
 import { whatsappContactHref } from "@/lib/contact";
 import { customerFetch } from "@/lib/auth/customer-client";
 import { env } from "@/lib/env";
@@ -21,6 +22,7 @@ import {
   type QuoteProductId,
   type QuoteVariant,
 } from "@/lib/quotations/catalogue";
+import { calculateBuiltUpCylinderInsulation, thicknessMmFromRateCardLabel } from "@/lib/quotations/built-up-nbr";
 
 type Configuration = Pick<QuoteVariant, "materialClass" | "thickness" | "size" | "lamination">;
 type ConfigurationRow = { id: string; productId: QuoteProductId; configuration: Configuration; quantity: string; orderUnit: QuoteOrderUnit };
@@ -60,6 +62,10 @@ function isTubeProduct(productId: QuoteProductId) {
 
 function isCartonTubeProduct(productId: QuoteProductId) {
   return productId === "nitrile-rubber-tube" || productId === "nitrile-rubber-tube-class-1";
+}
+
+function isNitrileRubberProduct(productId: QuoteProductId) {
+  return productId === "nitrile-rubber-tube" || productId === "nitrile-rubber-sheet";
 }
 
 function orderUnitForProduct(productId: QuoteProductId): QuoteOrderUnit {
@@ -129,6 +135,11 @@ function GenerateQuotationWorkspace() {
   const copiedQuoteRef = useRef<string | null>(null);
   const [configuredRows, setConfiguredRows] = useState<ConfigurationRow[]>([]);
   const [batchSelection, setBatchSelection] = useState<BatchSelection>(() => initialBatchSelection("xlpe-sheet"));
+  const [nitrileMode, setNitrileMode] = useState<"standard" | "custom">("standard");
+  const [customBuiltUpItems, setCustomBuiltUpItems] = useState<CustomBuiltUpNbrDraft[]>([]);
+  const [editingBuiltUpItem, setEditingBuiltUpItem] = useState<CustomBuiltUpNbrDraft | null>(null);
+  const [customPreviewVariantIds, setCustomPreviewVariantIds] = useState<string[]>([]);
+  const [builtUpNbrWastagePercent, setBuiltUpNbrWastagePercent] = useState(5);
   const [customerOverride, setCustomerOverride] = useState<Customer | null>(null);
   const [turnstileToken, setTurnstileToken] = useState("");
   const [message, setMessage] = useState("");
@@ -193,6 +204,22 @@ function GenerateQuotationWorkspace() {
     return () => { active = false; };
   }, [accessState, similarQuoteId]);
 
+  useEffect(() => {
+    if (accessState !== "allowed") return;
+    let active = true;
+    (async () => {
+      try {
+        const response = await customerFetch("/api/quotation-settings", { cache: "no-store" });
+        const result = await response.json() as { ok?: boolean; builtUpNbrWastagePercent?: number };
+        if (active && response.ok && result.ok && Number.isFinite(result.builtUpNbrWastagePercent)) setBuiltUpNbrWastagePercent(Number(result.builtUpNbrWastagePercent));
+      } catch {
+        // The server still applies its governed setting at issue time. Keep the
+        // default only as a clearly labelled preview fallback.
+      }
+    })();
+    return () => { active = false; };
+  }, [accessState]);
+
   const customer = customerOverride || (draft ? customerFromDraft(draft) : null);
   const configurationRows = configuredRows;
   const updateRows = (updater: (rows: ConfigurationRow[]) => ConfigurationRow[]) => {
@@ -243,10 +270,14 @@ function GenerateQuotationWorkspace() {
       return { row, variant, error: error instanceof Error ? error.message : "Check this configuration." };
     }
   }), [approvedRates, configurationRows, rateErrors]);
-  const configuredVariantIds = useMemo(() => configurationRows.flatMap((row) => {
-    const variant = findQuoteVariant({ productId: row.productId, ...row.configuration });
-    return variant ? [variant.id] : [];
-  }), [configurationRows]);
+  const configuredVariantIds = useMemo(() => [
+    ...configurationRows.flatMap((row) => {
+      const variant = findQuoteVariant({ productId: row.productId, ...row.configuration });
+      return variant ? [variant.id] : [];
+    }),
+    ...customBuiltUpItems.flatMap((item) => item.layers.map((layer) => layer.variantId)),
+    ...customPreviewVariantIds,
+  ], [configurationRows, customBuiltUpItems, customPreviewVariantIds]);
   const configuredVariantKey = configuredVariantIds.join("|");
   useEffect(() => {
     if (!configuredVariantIds.length) return;
@@ -259,7 +290,36 @@ function GenerateQuotationWorkspace() {
     return () => window.removeEventListener("focus", refreshOnFocus);
   }, [configuredVariantKey, configuredVariantIds, loadApprovedRates]);
   const configuredLines = rowCalculations.flatMap((entry) => entry.line ? [entry.line] : []);
-  const subtotal = configuredLines.reduce((total, item) => total + item.amount, 0);
+  const customBuiltUpEntries = useMemo(() => customBuiltUpItems.map((item) => {
+    try {
+      const layers = item.layers.map((layer) => {
+        const variant = getQuotationVariant(layer.variantId);
+        if (!variant || variant.productId !== "nitrile-rubber-sheet") throw new Error("A selected NBR Sheet layer is no longer available.");
+        const activeRate = approvedRates[layer.variantId];
+        return {
+          variantId: layer.variantId,
+          thicknessMm: thicknessMmFromRateCardLabel(variant.thickness),
+          lamination: variant.lamination,
+          ...(activeRate ? { rate: activeRate.rate } : {}),
+        };
+      });
+      const calculation = calculateBuiltUpCylinderInsulation({
+        materialClass: item.materialClass,
+        baseDiameterMm: item.baseDiameterMm,
+        pipeLengthM: item.pipeLengthM,
+        requiredTotalThicknessMm: item.requiredTotalThicknessMm,
+        wastagePercent: builtUpNbrWastagePercent,
+        layers,
+      });
+      const unavailable = item.layers.map((layer) => rateErrors[layer.variantId]).find(Boolean);
+      const allRatesActive = item.layers.every((layer) => approvedRates[layer.variantId]);
+      return { item, calculation, error: unavailable || (allRatesActive ? undefined : "Checking the active NBR Sheet Rate Card...") };
+    } catch (error) {
+      return { item, error: error instanceof Error ? error.message : "Could not calculate this Custom Built-Up NBR item." };
+    }
+  }), [approvedRates, builtUpNbrWastagePercent, customBuiltUpItems, rateErrors]);
+  const customSubtotal = customBuiltUpEntries.reduce((total, entry) => total + (!entry.error && entry.calculation?.basicAmount !== undefined ? entry.calculation.basicAmount : 0), 0);
+  const subtotal = configuredLines.reduce((total, item) => total + item.amount, 0) + customSubtotal;
   const gst = Number((subtotal * (env.quotationGstRate / 100)).toFixed(2));
   const total = subtotal + gst;
   const batchMaterialClasses = quoteOptions(batchSelection.productId, "materialClass");
@@ -332,15 +392,22 @@ function GenerateQuotationWorkspace() {
     event.preventDefault();
     if (!customer) return;
     const invalidRow = rowCalculations.find((entry) => entry.error);
-    if (invalidRow || !configuredLines.length) {
+    const invalidBuiltUpItem = customBuiltUpEntries.find((entry) => entry.error || entry.calculation?.basicAmount === undefined);
+    if (invalidRow || invalidBuiltUpItem || (!configuredLines.length && !customBuiltUpItems.length)) {
       setMessageTone("error");
-      return setMessage(invalidRow?.error || "Add at least one product configuration before generating the quotation.");
+      return setMessage(invalidRow?.error || invalidBuiltUpItem?.error || "Add at least one product configuration or Custom Built-Up NBR item before generating the quotation.");
     }
     setSubmitting(true); setMessage(""); setMessageTone("info");
     try {
       const response = await customerFetch("/api/quotations", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items: configuredLines.map((item) => ({ variantId: item.variantId, quantity: item.requestedQuantity, orderUnit: item.requestedUnit })), customer, enquiryId: draft?.enquiryId || undefined, turnstileToken }),
+        body: JSON.stringify({
+          items: configuredLines.map((item) => ({ variantId: item.variantId, quantity: item.requestedQuantity, orderUnit: item.requestedUnit })),
+          customBuiltUpItems: customBuiltUpItems.map(({ id: _id, ...item }) => item),
+          customer,
+          enquiryId: draft?.enquiryId || undefined,
+          turnstileToken,
+        }),
       });
       const result = await response.json() as { ok: boolean; message?: string; quotation?: { id: string; accessToken: string } };
       if (!response.ok || !result.ok || !result.quotation) throw new Error(result.message || "We could not generate the quotation.");
@@ -362,17 +429,22 @@ function GenerateQuotationWorkspace() {
 
   return <main className="quotation-page">
     <CatalogueHeader />
-    <section className="quotation-hero"><div className="catalogue-shell"><p className="catalogue-kicker"><span /> PHASE 1 QUOTATION BUILDER</p><h1>Configure material. Generate a clear quote.</h1><p>Only valid product combinations can be selected. Rates are calculated on the server again before a quotation is issued.</p><div className="quotation-stepper"><span className="active">1. Configure</span><span className={configuredLines.length ? "active" : ""}>2. Review</span><span>3. Customer details</span><span>4. Generate PDF</span></div></div></section>
+    <section className="quotation-hero"><div className="catalogue-shell"><p className="catalogue-kicker"><span /> PHASE 1 QUOTATION BUILDER</p><h1>Configure material. Generate a clear quote.</h1><p>Only valid product combinations can be selected. Rates are calculated on the server again before a quotation is issued.</p><div className="quotation-stepper"><span className="active">1. Configure</span><span className={configuredLines.length || customBuiltUpItems.length ? "active" : ""}>2. Review</span><span>3. Customer details</span><span>4. Generate PDF</span></div></div></section>
 
     <section className="quotation-main catalogue-shell">
       <div className="quotation-workspace">
         <section className="quotation-config-card">
           <div className="quotation-card-heading"><div><p className="catalogue-kicker"><span /> PRODUCT CONFIGURATION</p><h2>Configure each quotation line.</h2></div><span className="provisional-label">Rate-card data</span></div>
           <p className="quotation-config-intro">Sheets are ordered in rolls, open-cell sheets in box packing, Nitrile tubes in cartons, XLPE tubes in running metres, tape by roll and adhesive by drum. Each line uses its approved rate basis.</p>
-          <section className="quotation-batch-builder" aria-labelledby="multiple-configurations-heading">
+          {isNitrileRubberProduct(batchSelection.productId) && <fieldset className="nitrile-insulation-type" aria-label="Nitrile Rubber insulation type"><legend>Insulation type</legend><label><input type="radio" name="nitrile-mode" checked={nitrileMode === "standard"} onChange={() => setNitrileMode("standard")} /> Standard Tube</label><label><input type="radio" name="nitrile-mode" checked={nitrileMode === "custom"} onChange={() => setNitrileMode("custom")} /> Custom Diameter / Built-Up</label><p>Custom Diameter / Built-Up uses active Nitrile Rubber Sheet Rate Cards layer by layer; it never creates a fabricated tube SKU.</p></fieldset>}
+          {isNitrileRubberProduct(batchSelection.productId) && nitrileMode === "custom" && <BuiltUpNbrConfigurator rates={approvedRates} rateErrors={rateErrors} wastagePercent={builtUpNbrWastagePercent} editingItem={editingBuiltUpItem} onEditConsumed={() => setEditingBuiltUpItem(null)} onPreviewVariantIdsChange={setCustomPreviewVariantIds} onAdd={(item) => setCustomBuiltUpItems((current) => {
+            const existing = current.some((entry) => entry.id === item.id);
+            return existing ? current.map((entry) => entry.id === item.id ? item : entry) : [...current, item];
+          })} />}
+          <section className="quotation-batch-builder" hidden={isNitrileRubberProduct(batchSelection.productId) && nitrileMode === "custom"} aria-labelledby="multiple-configurations-heading">
             <div className="quotation-batch-heading"><div><span>Multiple selection</span><h3 id="multiple-configurations-heading">Add several configurations at once</h3></div><p>Each selected option becomes its own editable quotation line with the correct rate and subtotal.</p></div>
             <div className="quotation-batch-grid">
-              <label>Product<select value={batchSelection.productId} onChange={(event) => setBatchSelection(initialBatchSelection(event.target.value as QuoteProductId))}>{quotationProducts.map((product) => <option value={product.id} key={product.id}>{product.name}</option>)}</select></label>
+              <label>Product<select value={batchSelection.productId} onChange={(event) => { setBatchSelection(initialBatchSelection(event.target.value as QuoteProductId)); setNitrileMode("standard"); }}>{quotationProducts.map((product) => <option value={product.id} key={product.id}>{product.name}</option>)}</select></label>
               <label>Material class<select value={batchSelection.materialClass} onChange={(event) => setBatchSelection((current) => ({ ...current, materialClass: event.target.value, thicknesses: [], sizes: [], lamination: "" }))}>{batchMaterialClasses.map((value) => <option value={value} key={value}>{value}</option>)}</select></label>
               <fieldset className="quotation-checkbox-group"><legend>Select thicknesses <em>(one or more)</em></legend><div>{batchThicknesses.map((thickness) => <label key={thickness}><input type="checkbox" checked={batchSelection.thicknesses.includes(thickness)} onChange={() => setBatchSelection((current) => {
                 const thicknesses = toggleSelection(current.thicknesses, thickness);
@@ -414,10 +486,11 @@ function GenerateQuotationWorkspace() {
             </table>
           </div>
           <div className="quotation-config-actions"><span>{configurationRows.length} configuration line{configurationRows.length === 1 ? "" : "s"}</span><span>Select options in Multiple selection to add configuration rows.</span></div>
+          {customBuiltUpEntries.length > 0 && <section className="built-up-nbr-basket" aria-labelledby="built-up-basket-title"><div><p className="catalogue-kicker"><span /> CUSTOM BUILT-UP NBR</p><h3 id="built-up-basket-title">Grouped custom insulation items</h3></div>{customBuiltUpEntries.map((entry) => <article key={entry.item.id}><div><strong>Custom {entry.item.baseDiameterMm} mm Dia × {entry.item.requiredTotalThicknessMm} mm Built-Up NBR</strong><span>{entry.item.pipeLengthM} m pipe length · {entry.item.materialClass}</span></div><ul>{entry.item.layers.map((layer, index) => { const variant = getQuotationVariant(layer.variantId); const calculated = entry.calculation?.layers[index]; return <li key={`${layer.variantId}-${index}`}>Layer {index + 1}: {variant?.thickness || "Unknown"} {variant?.lamination || ""}{calculated ? ` — ${calculated.quotedAreaM2.toFixed(2)} m²` : ""}</li>; })}</ul><div className="built-up-nbr-basket-total"><span>{entry.calculation ? `Finished OD ${entry.calculation.finishedOuterDiameterMm.toFixed(2)} mm · ${entry.calculation.totalQuotedAreaM2.toFixed(2)} m² sheet` : entry.error}</span><strong>{entry.calculation?.basicAmount !== undefined ? currency.format(entry.calculation.basicAmount) : "Rate pending"}</strong></div><footer><button type="button" onClick={() => setEditingBuiltUpItem(entry.item)}>Edit</button><button type="button" onClick={() => setCustomBuiltUpItems((current) => [...current, { ...entry.item, id: `built-up-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, layers: entry.item.layers.map((layer) => ({ ...layer })) }])}>Duplicate</button><button type="button" onClick={() => setCustomBuiltUpItems((current) => current.filter((item) => item.id !== entry.item.id))}><Trash2 size={14} /> Remove</button></footer></article>)}</section>}
         </section>
 
         <aside className="quotation-summary-card">
-          <div className="quotation-card-heading"><div><p className="catalogue-kicker"><span /> LIVE SUMMARY</p><h2>Quotation total</h2></div><span>{configuredLines.length} valid line{configuredLines.length === 1 ? "" : "s"}</span></div>
+          <div className="quotation-card-heading"><div><p className="catalogue-kicker"><span /> LIVE SUMMARY</p><h2>Quotation total</h2></div><span>{configuredLines.length + customBuiltUpEntries.filter((entry) => !entry.error).length} valid line{configuredLines.length + customBuiltUpEntries.filter((entry) => !entry.error).length === 1 ? "" : "s"}</span></div>
           <p className="quotation-empty">Each product line, rate and subtotal is shown in the configuration table above.</p>
           <div className="quotation-totals"><span>Subtotal <b>{currency.format(subtotal)}</b></span><span>GST ({env.quotationGstRate}%) <b>{currency.format(gst)}</b></span><span>Transport <b>At Actual</b></span><strong>Estimated total <b>{currency.format(total)}</b></strong></div>
           <p className="quotation-summary-note"><ShieldCheck size={15} /> Quantity conversion, pack rounding and prices are recalculated on the server before issue.</p>

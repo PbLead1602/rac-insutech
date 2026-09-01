@@ -4,11 +4,14 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Plus, Trash2 } from "lucide-react";
 import { adminFetch } from "@/lib/auth/admin-client";
+import { BuiltUpNbrConfigurator, type CustomBuiltUpNbrDraft } from "@/components/built-up-nbr-configurator";
 import type { EnquiryRecord, QuotationRecord } from "@/lib/db/types";
-import { calculateQuoteLine, findQuoteVariant, getQuotationVariant, quotationProducts, quoteOptions, type CalculatedQuoteLine, type QuoteOrderUnit, type QuoteProductId } from "@/lib/quotations/catalogue";
+import { calculateQuoteLine, findQuoteVariant, getQuotationVariant, quotationProducts, quotationVariants, quoteOptions, type CalculatedQuoteLine, type QuoteOrderUnit, type QuoteProductId } from "@/lib/quotations/catalogue";
+import { calculateBuiltUpCylinderInsulation, thicknessMmFromRateCardLabel } from "@/lib/quotations/built-up-nbr";
 
 type BatchSelection = { productId: QuoteProductId; materialClass: string; thicknesses: string[]; sizes: string[]; lamination: string };
 type SelectedLine = CalculatedQuoteLine & { id: string };
+type AdminCustomBuiltUpDraft = CustomBuiltUpNbrDraft & { overrideAmount?: number; overrideReason?: string };
 
 const currency = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -22,6 +25,10 @@ function toggleSelection(values: string[], value: string) {
 
 function isTubeProduct(productId: QuoteProductId) {
   return productId === "xlpe-tube" || productId === "nitrile-rubber-tube" || productId === "nitrile-rubber-tube-class-1";
+}
+
+function isNitrileRubberProduct(productId: QuoteProductId) {
+  return productId === "nitrile-rubber-tube" || productId === "nitrile-rubber-sheet";
 }
 
 function orderUnitForProduct(productId: QuoteProductId): QuoteOrderUnit {
@@ -47,6 +54,10 @@ export default function AdminQuotationCreatePanel() {
   const searchParams = useSearchParams();
   const [lines, setLines] = useState<SelectedLine[]>([]);
   const [batchSelection, setBatchSelection] = useState<BatchSelection>(() => initialBatchSelection("xlpe-sheet"));
+  const [nitrileMode, setNitrileMode] = useState<"standard" | "custom">("standard");
+  const [customBuiltUpItems, setCustomBuiltUpItems] = useState<AdminCustomBuiltUpDraft[]>([]);
+  const [editingBuiltUpItem, setEditingBuiltUpItem] = useState<CustomBuiltUpNbrDraft | null>(null);
+  const [builtUpNbrWastagePercent, setBuiltUpNbrWastagePercent] = useState(5);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -69,6 +80,19 @@ export default function AdminQuotationCreatePanel() {
     return () => controller.abort();
   }, [enquiryId]);
 
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const response = await adminFetch("/api/admin/settings", { cache: "no-store" });
+        const data = await response.json() as { settings?: Array<{ key: string; value: Record<string, unknown> }> };
+        const value = Number(data.settings?.find((item) => item.key === "quotation_terms")?.value.builtUpNbrWastagePercent);
+        if (active && response.ok && Number.isFinite(value) && value >= 0 && value <= 50) setBuiltUpNbrWastagePercent(value);
+      } catch { /* server calculation remains authoritative */ }
+    })();
+    return () => { active = false; };
+  }, []);
+
   const batchMaterialClasses = quoteOptions(batchSelection.productId, "materialClass");
   const batchThicknesses = quoteOptions(batchSelection.productId, "thickness", { materialClass: batchSelection.materialClass });
   const batchSizeOptions = useMemo(() => [...new Set(batchSelection.thicknesses.flatMap((thickness) => quoteOptions(batchSelection.productId, "size", { materialClass: batchSelection.materialClass, thickness })))], [batchSelection.materialClass, batchSelection.productId, batchSelection.thicknesses]);
@@ -79,7 +103,14 @@ export default function AdminQuotationCreatePanel() {
       return sizes.flatMap((size) => quoteOptions(batchSelection.productId, "lamination", { materialClass: batchSelection.materialClass, thickness, size }));
     }))];
   }, [batchSelection.materialClass, batchSelection.productId, batchSelection.sizes, batchSelection.thicknesses, batchThicknesses]);
-  const subtotal = lines.reduce((total, line) => total + line.amount, 0);
+  const builtUpPreviewRates = useMemo(() => Object.fromEntries(quotationVariants.filter((variant) => variant.productId === "nitrile-rubber-sheet").map((variant) => [variant.id, { rate: variant.rate, rateUnit: variant.rateUnit }])), []);
+  const customBuiltUpSubtotal = useMemo(() => customBuiltUpItems.reduce((total, item) => {
+    try {
+      const calculation = calculateBuiltUpCylinderInsulation({ materialClass: item.materialClass, baseDiameterMm: item.baseDiameterMm, pipeLengthM: item.pipeLengthM, requiredTotalThicknessMm: item.requiredTotalThicknessMm, wastagePercent: builtUpNbrWastagePercent, layers: item.layers.map((layer) => { const variant = getQuotationVariant(layer.variantId); if (!variant) throw new Error("Invalid NBR Sheet layer"); return { variantId: variant.id, thicknessMm: thicknessMmFromRateCardLabel(variant.thickness), lamination: variant.lamination, rate: variant.rate }; }) });
+      return total + (item.overrideAmount !== undefined ? item.overrideAmount : (calculation.basicAmount || 0));
+    } catch { return total; }
+  }, 0), [builtUpNbrWastagePercent, customBuiltUpItems]);
+  const subtotal = lines.reduce((total, line) => total + line.amount, 0) + customBuiltUpSubtotal;
   const gstAmount = Number((subtotal * (gstRate / 100)).toFixed(2));
 
   const addSelectedConfigurations = () => {
@@ -130,10 +161,10 @@ export default function AdminQuotationCreatePanel() {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!lines.length) { setError("Use Multiple selection to add at least one product configuration."); return; }
+    if (!lines.length && !customBuiltUpItems.length) { setError("Use Multiple selection or Custom Built-Up NBR to add at least one product configuration."); return; }
     const form = new FormData(event.currentTarget);
     const customer = Object.fromEntries(["fullName", "company", "mobile", "email", "gstin", "projectName", "projectLocation", "city", "pinCode", "customerType", "deliveryPreference", "notes"].map((field) => [field, String(form.get(field) || "")]));
-    const payload = { customer, items: lines.map(({ id: _id, amount: _amount, provisional: _provisional, ...line }) => line), gstRate, enquiryId: enquiryId || undefined, validUntil: String(form.get("validUntil") || ""), internalNotes: String(form.get("internalNotes") || "") };
+    const payload = { customer, items: lines.map(({ id: _id, amount: _amount, provisional: _provisional, ...line }) => line), customBuiltUpItems: customBuiltUpItems.map(({ id: _id, ...item }) => item), gstRate, enquiryId: enquiryId || undefined, validUntil: String(form.get("validUntil") || ""), internalNotes: String(form.get("internalNotes") || "") };
     setBusy(true); setError("");
     try {
       const response = await adminFetch("/api/admin/quotations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -150,11 +181,14 @@ export default function AdminQuotationCreatePanel() {
     {enquiryId && <p className="admin-records-message">Creating a quotation from enquiry {enquiryId.slice(0, 8)}. Confirm the prefilled customer and project information before saving.</p>}
     <form className="admin-customer-fields admin-os-card" onSubmit={submit} key={enquiry?.id || "manual-quotation"}>
       <div className="admin-customer-fields-grid"><label>Full name<input name="fullName" required autoFocus defaultValue={prefilledCustomer?.fullName} /></label><label>Company<input name="company" required defaultValue={prefilledCustomer?.company} /></label><label>Mobile number<input name="mobile" required inputMode="tel" defaultValue={prefilledCustomer?.mobile} /></label><label>Email<input name="email" type="email" required defaultValue={prefilledCustomer?.email} /></label><label>GSTIN<input name="gstin" defaultValue={prefilledCustomer?.gstin} /></label><label>Project name<input name="projectName" defaultValue={prefilledCustomer?.projectName} /></label><label>Project location<input name="projectLocation" defaultValue={prefilledCustomer?.projectLocation} /></label><label>City<input name="city" defaultValue={prefilledCustomer?.city} /></label><label>PIN code<input name="pinCode" defaultValue={prefilledCustomer?.pinCode} /></label><label>Customer type<select name="customerType" defaultValue={prefilledCustomer?.customerType || "end_user"}><option value="end_user">End user</option><option value="contractor">Contractor</option><option value="consultant">Consultant</option><option value="dealer">Dealer</option><option value="other">Other</option></select></label><label>Delivery preference<input name="deliveryPreference" defaultValue={prefilledCustomer?.deliveryPreference} /></label><label>Valid until<input name="validUntil" type="date" /></label></div>
-      <section className="admin-multiple-selection" aria-labelledby="admin-multiple-selection-title">
+      {isNitrileRubberProduct(batchSelection.productId) && <fieldset className="nitrile-insulation-type" aria-label="Nitrile Rubber insulation type"><legend>Insulation type</legend><label><input type="radio" name="admin-nitrile-mode" checked={nitrileMode === "standard"} onChange={() => setNitrileMode("standard")} /> Standard Tube</label><label><input type="radio" name="admin-nitrile-mode" checked={nitrileMode === "custom"} onChange={() => setNitrileMode("custom")} /> Custom Diameter / Built-Up</label><p>Custom Diameter / Built-Up derives all material quantities from active NBR Sheet Rate Cards.</p></fieldset>}
+      {isNitrileRubberProduct(batchSelection.productId) && nitrileMode === "custom" && <BuiltUpNbrConfigurator rates={builtUpPreviewRates} rateErrors={{}} wastagePercent={builtUpNbrWastagePercent} editingItem={editingBuiltUpItem} onEditConsumed={() => setEditingBuiltUpItem(null)} onAdd={(item) => setCustomBuiltUpItems((current) => current.some((entry) => entry.id === item.id) ? current.map((entry) => entry.id === item.id ? { ...entry, ...item } : entry) : [...current, item])} />}
+      <section className="admin-multiple-selection" hidden={isNitrileRubberProduct(batchSelection.productId) && nitrileMode === "custom"} aria-labelledby="admin-multiple-selection-title">
         <div className="admin-multiple-selection-heading"><div><p>MULTIPLE SELECTION</p><h3 id="admin-multiple-selection-title">Add several configurations at once</h3></div><span>Each selected option creates an editable draft line using its approved Rate Card basis.</span></div>
-        <div className="admin-multiple-selection-grid"><label>Product<select value={batchSelection.productId} onChange={(event) => setBatchSelection(initialBatchSelection(event.target.value as QuoteProductId))}>{quotationProducts.map((product) => <option value={product.id} key={product.id}>{product.name}</option>)}</select></label><label>Material class<select value={batchSelection.materialClass} onChange={(event) => setBatchSelection((current) => ({ ...current, materialClass: event.target.value, thicknesses: [], sizes: [], lamination: "" }))}>{batchMaterialClasses.map((value) => <option value={value} key={value}>{value}</option>)}</select></label><fieldset className="admin-multiple-checks"><legend>Select thicknesses <em>(one or more)</em></legend><div>{batchThicknesses.map((thickness) => <label key={thickness}><input type="checkbox" checked={batchSelection.thicknesses.includes(thickness)} onChange={() => setBatchSelection((current) => { const thicknesses = toggleSelection(current.thicknesses, thickness); const validSizes = new Set(thicknesses.flatMap((selectedThickness) => quoteOptions(current.productId, "size", { materialClass: current.materialClass, thickness: selectedThickness }))); return { ...current, thicknesses, sizes: current.sizes.filter((size) => validSizes.has(size)), lamination: "" }; })} />{thickness}</label>)}</div></fieldset>{isTubeProduct(batchSelection.productId) && <fieldset className="admin-multiple-checks"><legend>Select pipe / roll sizes <em>(one or more)</em></legend>{batchSelection.thicknesses.length ? <div>{batchSizeOptions.map((size) => <label key={size}><input type="checkbox" checked={batchSelection.sizes.includes(size)} onChange={() => setBatchSelection((current) => ({ ...current, sizes: toggleSelection(current.sizes, size), lamination: "" }))} />{size}</label>)}</div> : <p>Select a thickness first to see matching tube sizes.</p>}</fieldset>}<label>Lamination<select value={batchSelection.lamination} onChange={(event) => setBatchSelection((current) => ({ ...current, lamination: event.target.value }))}><option value="">Select lamination</option>{batchLaminations.map((value) => <option value={value} key={value}>{value}</option>)}</select></label></div>
+        <div className="admin-multiple-selection-grid"><label>Product<select value={batchSelection.productId} onChange={(event) => { setBatchSelection(initialBatchSelection(event.target.value as QuoteProductId)); setNitrileMode("standard"); }}>{quotationProducts.map((product) => <option value={product.id} key={product.id}>{product.name}</option>)}</select></label><label>Material class<select value={batchSelection.materialClass} onChange={(event) => setBatchSelection((current) => ({ ...current, materialClass: event.target.value, thicknesses: [], sizes: [], lamination: "" }))}>{batchMaterialClasses.map((value) => <option value={value} key={value}>{value}</option>)}</select></label><fieldset className="admin-multiple-checks"><legend>Select thicknesses <em>(one or more)</em></legend><div>{batchThicknesses.map((thickness) => <label key={thickness}><input type="checkbox" checked={batchSelection.thicknesses.includes(thickness)} onChange={() => setBatchSelection((current) => { const thicknesses = toggleSelection(current.thicknesses, thickness); const validSizes = new Set(thicknesses.flatMap((selectedThickness) => quoteOptions(current.productId, "size", { materialClass: current.materialClass, thickness: selectedThickness }))); return { ...current, thicknesses, sizes: current.sizes.filter((size) => validSizes.has(size)), lamination: "" }; })} />{thickness}</label>)}</div></fieldset>{isTubeProduct(batchSelection.productId) && <fieldset className="admin-multiple-checks"><legend>Select pipe / roll sizes <em>(one or more)</em></legend>{batchSelection.thicknesses.length ? <div>{batchSizeOptions.map((size) => <label key={size}><input type="checkbox" checked={batchSelection.sizes.includes(size)} onChange={() => setBatchSelection((current) => ({ ...current, sizes: toggleSelection(current.sizes, size), lamination: "" }))} />{size}</label>)}</div> : <p>Select a thickness first to see matching tube sizes.</p>}</fieldset>}<label>Lamination<select value={batchSelection.lamination} onChange={(event) => setBatchSelection((current) => ({ ...current, lamination: event.target.value }))}><option value="">Select lamination</option>{batchLaminations.map((value) => <option value={value} key={value}>{value}</option>)}</select></label></div>
         <button type="button" className="admin-multiple-selection-add" onClick={addSelectedConfigurations}><Plus size={16} />Add selected configurations</button>
       </section>
+      {customBuiltUpItems.length > 0 && <section className="built-up-nbr-basket"><div><p className="catalogue-kicker"><span /> CUSTOM BUILT-UP NBR</p><h3>Custom sheet-built quotation items</h3></div>{customBuiltUpItems.map((item) => <article key={item.id}><div><strong>Custom {item.baseDiameterMm} mm Dia × {item.requiredTotalThicknessMm} mm Built-Up NBR</strong><span>{item.pipeLengthM} m · {item.materialClass} · Admin setting wastage {builtUpNbrWastagePercent}%</span></div><ul>{item.layers.map((layer, index) => { const variant = getQuotationVariant(layer.variantId); return <li key={`${layer.variantId}-${index}`}>Layer {index + 1}: {variant?.thickness} {variant?.lamination}</li>; })}</ul><div className="admin-built-up-override"><label>Admin override basic amount (optional)<input type="number" min="0" step="0.01" value={item.overrideAmount ?? ""} onChange={(event) => setCustomBuiltUpItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, overrideAmount: event.target.value === "" ? undefined : Number(event.target.value) } : entry))} placeholder="Use calculated amount" /></label>{item.overrideAmount !== undefined && <label>Override reason<textarea value={item.overrideReason || ""} onChange={(event) => setCustomBuiltUpItems((current) => current.map((entry) => entry.id === item.id ? { ...entry, overrideReason: event.target.value } : entry))} required placeholder="Why is this commercial amount different?" /></label>}</div><footer><button type="button" onClick={() => setEditingBuiltUpItem(item)}>Edit</button><button type="button" onClick={() => setCustomBuiltUpItems((current) => [...current, { ...item, id: `built-up-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, layers: item.layers.map((layer) => ({ ...layer })) }])}>Duplicate</button><button type="button" onClick={() => setCustomBuiltUpItems((current) => current.filter((entry) => entry.id !== item.id))}><Trash2 size={14} />Remove</button></footer></article>)}</section>}
       <section className="admin-selected-configurations" aria-labelledby="admin-selected-configurations-title"><div className="admin-drawer-section-heading"><div><h3 id="admin-selected-configurations-title">Selected configurations</h3><span>Adjust quantity or rate only when preparing this editable commercial draft.</span></div><b>{lines.length} line{lines.length === 1 ? "" : "s"}</b></div>{lines.length ? <div className="admin-selected-configurations-scroll"><table><thead><tr><th>Product configuration</th><th>Order quantity</th><th>Supply quantity</th><th>Rate / unit</th><th>Subtotal</th><th /></tr></thead><tbody>{lines.map((line) => <tr key={line.id}><td><strong>{line.productName}</strong><small>{line.configuration}</small></td><td><input aria-label={`Order quantity for ${line.productName}`} type="number" min="1" step="1" value={line.requestedQuantity} onChange={(event) => updateLineQuantity(line.id, event.target.value)} /><span>{line.requestedUnit.replaceAll("_", " ")}</span></td><td><strong>{line.suppliedQuantity.toLocaleString("en-IN", { maximumFractionDigits: 2 })}</strong><small>{line.technicalQuantity}</small></td><td><input aria-label={`Rate for ${line.productName}`} type="number" min="0" step="0.00001" value={line.rate} onChange={(event) => updateLineRate(line.id, event.target.value)} /><span>{line.rateUnit}</span></td><td><strong>{currency.format(line.amount)}</strong></td><td><button type="button" onClick={() => setLines((current) => current.filter((item) => item.id !== line.id))} aria-label={`Remove ${line.productName}`}><Trash2 size={15} />Remove</button></td></tr>)}</tbody></table></div> : <p className="admin-selected-configurations-empty">No product configurations selected yet. Use Multiple selection above to add the first line.</p>}</section>
       <div className="admin-customer-fields-grid"><label>GST rate (%)<input type="number" min="0" max="100" step="0.01" value={gstRate} onChange={(event) => setGstRate(Number(event.target.value))} /></label><label>Internal notes<textarea name="internalNotes" placeholder="Optional private commercial note" /></label></div><div className="admin-revision-total"><span>Subtotal <b>{currency.format(subtotal)}</b></span><span>GST <b>{currency.format(gstAmount)}</b></span><strong>Draft total <b>{currency.format(subtotal + gstAmount)}</b></strong></div>{error && <p className="admin-form-error">{error}</p>}{message && <p className="admin-records-message">{message}</p>}<div className="admin-customer-form-actions"><button type="button" className="admin-drawer-secondary" onClick={() => router.push("/admin/quotations")}>Cancel</button><button className="admin-os-primary" disabled={busy}>{busy ? "Creating..." : "Create quotation"}<ArrowRight size={16} /></button></div>
     </form>

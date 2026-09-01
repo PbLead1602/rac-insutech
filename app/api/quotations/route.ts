@@ -5,6 +5,7 @@ import { verifyTurnstile } from "@/lib/services/turnstile";
 import { serverEnv } from "@/lib/env/server";
 import { calculateQuoteLine } from "@/lib/quotations/catalogue";
 import { getServerPricedVariant } from "@/lib/quotations/pricing";
+import { priceCustomBuiltUpNbrItem } from "@/lib/quotations/built-up-nbr-pricing";
 import { quotationSubmissionSchema } from "@/lib/validation/quotation";
 import { finaliseQuotationSalesLinks, resolveSalesLinks } from "@/lib/repositories/sales-workflow";
 import { customerAccessFailure, getCustomerRequestContext } from "@/lib/auth/customer-server";
@@ -40,11 +41,16 @@ export async function POST(request: Request) {
 
     // The browser submits only variant IDs and requested quantities. Price,
     // supply quantity, rate-card unit rules, carton rounding, GST and totals are always recomputed here.
-    const itemResults = await Promise.all(parsed.data.items.map(async (item) => {
+    const standardItems = await Promise.all(parsed.data.items.map(async (item) => {
       const variant = await getServerPricedVariant(item.variantId);
       if (!variant) throw new Error("One selected product configuration is no longer available. Please configure it again.");
       return calculateQuoteLine(variant, item.quantity, item.orderUnit);
     }));
+    // Custom-diameter NBR supplies only dimensions and sheet variant IDs. The
+    // service re-reads active rate cards, derives thickness/facing, applies
+    // Admin-configured wastage, and ignores all browser pricing values.
+    const customItems = await Promise.all(parsed.data.customBuiltUpItems.map((item) => priceCustomBuiltUpNbrItem(item)));
+    const itemResults = [...standardItems, ...customItems];
     const subtotal = itemResults.reduce((total, item) => total + item.amount, 0);
     const gstRate = serverEnv.quotationGstRate;
     const gstAmount = Number((subtotal * (gstRate / 100)).toFixed(2));

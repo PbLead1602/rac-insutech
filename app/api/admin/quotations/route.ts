@@ -3,6 +3,7 @@ import { getAdminRequestContext } from "@/lib/auth/admin-server";
 import { createAdminQuotation, listAdminQuotations } from "@/lib/repositories/quotations";
 import { adminQuotationCreateSchema } from "@/lib/validation/admin-quotations";
 import { finaliseQuotationSalesLinks, resolveSalesLinks } from "@/lib/repositories/sales-workflow";
+import { priceCustomBuiltUpNbrItem } from "@/lib/quotations/built-up-nbr-pricing";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,16 @@ export async function POST(request: Request) {
   if (!parsed.success) return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message || "Check the quotation details." }, { status: 400 });
   try {
     const salesLinks = await resolveSalesLinks(parsed.data.customer, { enquiryId: parsed.data.enquiryId });
-    const created = await createAdminQuotation({ ...parsed.data, validUntil: parsed.data.validUntil || undefined, ...salesLinks });
+    const customItems = await Promise.all(parsed.data.customBuiltUpItems.map(({ overrideAmount, overrideReason, ...selection }) => priceCustomBuiltUpNbrItem(selection, { overrideAmount, overrideReason })));
+    const created = await createAdminQuotation({
+      customer: parsed.data.customer,
+      items: [...parsed.data.items, ...customItems],
+      gstRate: parsed.data.gstRate,
+      enquiryId: parsed.data.enquiryId,
+      validUntil: parsed.data.validUntil || undefined,
+      internalNotes: parsed.data.internalNotes,
+      ...salesLinks,
+    });
     const quotation = await finaliseQuotationSalesLinks(created.quotation, salesLinks);
     return NextResponse.json({ ok: true, quotation }, { status: 201 });
   } catch (error) {

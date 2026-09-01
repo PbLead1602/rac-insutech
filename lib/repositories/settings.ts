@@ -11,3 +11,10 @@ function store() { return persistentDevelopmentStore<SettingRecord[]>("settings"
 function toSetting(row: Record<string, unknown>): SettingRecord { return { key: String(row.key), value: (row.value || {}) as Record<string, unknown>, updatedAt: row.updated_at ? String(row.updated_at) : undefined }; }
 export async function listAdminSettings(): Promise<SettingRecord[]> { const mode = integrationMode(serverEnv.supabaseServiceConfigured); if (mode === "mock") return store(); if (mode === "unconfigured") throw new Error("Settings storage is not configured."); const client = getSupabaseServiceClient(); if (!client) throw new Error("Supabase service client is unavailable."); const { data, error } = await client.from("site_settings").select("*").order("key"); if (error) throw new Error("Could not load settings."); return (data || []).map((row) => toSetting(row as Record<string, unknown>)); }
 export async function saveAdminSetting(key: string, value: Record<string, unknown>): Promise<SettingRecord> { const mode = integrationMode(serverEnv.supabaseServiceConfigured); if (mode === "mock") { const index = store().findIndex((item) => item.key === key); const record = { key, value, updatedAt: new Date().toISOString() }; if (index < 0) store().push(record); else store()[index] = record; return record; } if (mode === "unconfigured") throw new Error("Settings storage is not configured."); const client = getSupabaseServiceClient(); if (!client) throw new Error("Supabase service client is unavailable."); const { data, error } = await client.from("site_settings").upsert({ key, value }, { onConflict: "key" }).select("*").single(); if (error || !data) throw new Error("Could not save the setting."); return toSetting(data as Record<string, unknown>); }
+
+/** Default is governed here and can be changed by RAC in quotation settings. */
+export async function getBuiltUpNbrWastagePercent() {
+  const quotationTerms = (await listAdminSettings()).find((setting) => setting.key === "quotation_terms")?.value || {};
+  const value = Number(quotationTerms.builtUpNbrWastagePercent);
+  return Number.isFinite(value) && value >= 0 && value <= 50 ? value : 5;
+}

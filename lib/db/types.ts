@@ -1,3 +1,5 @@
+import type { BuiltUpNbrLayerCalculation } from "@/lib/quotations/built-up-nbr";
+
 export type EnquiryStatus = "new" | "contacted" | "qualified" | "quoted" | "won" | "lost" | "spam" | "requirement_received" | "quotation_required" | "quotation_sent" | "follow_up" | "converted" | "not_relevant" | "closed";
 export type UserRole = "admin";
 
@@ -331,6 +333,41 @@ export type QuotationLineRecord = {
   rateUnit: string;
   amount: number;
   provisional: true;
+  /** Present only for the grouped, sheet-built NBR insulation item. */
+  itemType?: "STANDARD" | "CUSTOM_BUILT_UP_NBR";
+  customBuiltUp?: CustomBuiltUpNbrSnapshot;
+};
+
+export type CustomBuiltUpNbrLayerSnapshot = BuiltUpNbrLayerCalculation & {
+  sheetProductName: string;
+  materialClass: string;
+  rate: number;
+  amount: number;
+};
+
+/**
+ * Immutable technical and commercial snapshot for custom-diameter NBR.
+ * It deliberately records every layer so rate-card changes never alter an
+ * issued quotation.
+ */
+export type CustomBuiltUpNbrSnapshot = {
+  itemType: "CUSTOM_BUILT_UP_NBR";
+  productNameSnapshot: string;
+  materialClassSnapshot: string;
+  baseDiameterMm: number;
+  pipeLengthM: number;
+  requiredTotalThicknessMm: number;
+  configuredTotalThicknessMm: number;
+  finishedOuterDiameterMm: number;
+  wastagePercent: number;
+  totalNetAreaM2: number;
+  totalQuotedAreaM2: number;
+  calculatedBasicAmount: number;
+  pricePerRunningMetre: number;
+  layers: CustomBuiltUpNbrLayerSnapshot[];
+  /** An Admin may quote a different commercial amount while retaining cost. */
+  quotedOverrideAmount?: number;
+  overrideReason?: string;
 };
 
 export type QuotationStatus =

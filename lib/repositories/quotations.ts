@@ -3,7 +3,7 @@ import "server-only";
 import { randomUUID } from "crypto";
 import { integrationMode, type IntegrationMode } from "@/lib/env";
 import { serverEnv } from "@/lib/env/server";
-import type { QuotationCustomer, QuotationLineRecord, QuotationNote, QuotationRecord, QuotationSource, QuotationStatus } from "@/lib/db/types";
+import type { CustomBuiltUpNbrSnapshot, QuotationCustomer, QuotationLineRecord, QuotationNote, QuotationRecord, QuotationSource, QuotationStatus } from "@/lib/db/types";
 import { getServerPricedVariant } from "@/lib/quotations/pricing";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { persistentDevelopmentStore } from "@/lib/development/persistent-store";
@@ -113,27 +113,38 @@ function validityDate(createdAt: string, days: number) {
   return date.toISOString().slice(0, 10);
 }
 
+function isCustomBuiltUpSnapshot(value: unknown): value is CustomBuiltUpNbrSnapshot {
+  if (!value || typeof value !== "object") return false;
+  const snapshot = value as Record<string, unknown>;
+  return snapshot.itemType === "CUSTOM_BUILT_UP_NBR" && Array.isArray(snapshot.layers) && typeof snapshot.baseDiameterMm === "number";
+}
+
 function quotationFromRow(quotation: Record<string, unknown>, items: Record<string, unknown>[] = []): QuotationRecord {
   return {
     id: String(quotation.id),
     quoteNumber: String(quotation.quote_number || ""),
     accessToken: String(quotation.access_token || ""),
     customer: quotation.customer as QuotationCustomer,
-    items: items.map((item) => ({
-      variantId: String(item.variant_id || item.product_variant_uuid || ""),
-      productName: String(item.product_name || ""),
-      configuration: String(item.configuration || ""),
-      requestedQuantity: Number(item.requested_quantity || 0),
-      requestedUnit: String(item.requested_unit || ""),
-      suppliedQuantity: Number(item.supplied_quantity || 0),
-      suppliedUnit: String(item.supplied_unit || ""),
-      cartons: item.cartons ? Number(item.cartons) : undefined,
-      technicalQuantity: String(item.technical_quantity || ""),
-      rate: Number(item.quoted_rate || item.rate || 0),
-      rateUnit: String(item.rate_unit || ""),
-      amount: Number(item.amount || 0),
-      provisional: true,
-    })),
+    items: items.map((item) => {
+      const snapshot = item.snapshot;
+      const customBuiltUp = isCustomBuiltUpSnapshot(snapshot) ? snapshot : undefined;
+      return {
+        variantId: String(item.variant_id || item.product_variant_uuid || ""),
+        productName: String(item.product_name || ""),
+        configuration: String(item.configuration || ""),
+        requestedQuantity: Number(item.requested_quantity || 0),
+        requestedUnit: String(item.requested_unit || ""),
+        suppliedQuantity: Number(item.supplied_quantity || 0),
+        suppliedUnit: String(item.supplied_unit || ""),
+        cartons: item.cartons ? Number(item.cartons) : undefined,
+        technicalQuantity: String(item.technical_quantity || ""),
+        rate: Number(item.quoted_rate || item.rate || 0),
+        rateUnit: String(item.rate_unit || ""),
+        amount: Number(item.amount || 0),
+        provisional: true as const,
+        ...(customBuiltUp ? { itemType: "CUSTOM_BUILT_UP_NBR" as const, customBuiltUp } : {}),
+      };
+    }),
     subtotal: Number(quotation.subtotal || 0),
     gstRate: Number(quotation.gst_rate || 0),
     gstAmount: Number(quotation.gst_amount || 0),
@@ -159,6 +170,63 @@ function quotationFromRow(quotation: Record<string, unknown>, items: Record<stri
     lastSentAt: quotation.last_sent_at ? String(quotation.last_sent_at) : undefined,
     lastViewedAt: quotation.last_viewed_at ? String(quotation.last_viewed_at) : undefined,
   };
+}
+
+function quotationItemRow(quotationId: string, item: QuotationLineRecord, sortOrder: number) {
+  return {
+    quotation_id: quotationId,
+    variant_id: item.variantId,
+    product_name: item.productName,
+    configuration: item.configuration,
+    requested_quantity: item.requestedQuantity,
+    requested_unit: item.requestedUnit,
+    supplied_quantity: item.suppliedQuantity,
+    supplied_unit: item.suppliedUnit,
+    cartons: item.cartons || null,
+    technical_quantity: item.technicalQuantity,
+    rate: item.rate,
+    quoted_rate: item.rate,
+    rate_unit: item.rateUnit,
+    amount: item.amount,
+    sort_order: sortOrder,
+    item_type: item.itemType || "STANDARD",
+    snapshot: item.customBuiltUp || {},
+  };
+}
+
+async function persistQuotationItems(client: NonNullable<ReturnType<typeof getSupabaseServiceClient>>, quotationId: string, items: QuotationLineRecord[]) {
+  const { data: insertedItems, error: itemError } = await client
+    .from("quotation_items")
+    .insert(items.map((item, index) => quotationItemRow(quotationId, item, index)))
+    .select("id, sort_order");
+  if (itemError || !insertedItems) throw new Error("The quotation was saved, but its line items could not be stored.");
+
+  const layerRows = insertedItems.flatMap((item) => {
+    const line = items[Number(item.sort_order)];
+    const custom = line?.customBuiltUp;
+    if (!custom) return [];
+    return custom.layers.map((layer) => ({
+      quotation_item_id: item.id,
+      layer_number: layer.layerNumber,
+      sheet_variant_id: layer.variantId,
+      sheet_product_name: layer.sheetProductName,
+      material_class: layer.materialClass,
+      thickness_mm: layer.thicknessMm,
+      lamination: layer.lamination,
+      inner_diameter_mm: layer.innerDiameterMm,
+      mean_diameter_mm: layer.meanDiameterMm,
+      outer_diameter_mm: layer.outerDiameterMm,
+      circumference_m: layer.circumferenceM,
+      net_area_m2: layer.netAreaM2,
+      wastage_percent: custom.wastagePercent,
+      quoted_area_m2: layer.quotedAreaM2,
+      unit_rate_snapshot: layer.rate,
+      amount_snapshot: layer.amount,
+    }));
+  });
+  if (!layerRows.length) return;
+  const { error: layerError } = await client.from("quotation_item_layers").insert(layerRows);
+  if (layerError) throw new Error("The quotation was saved, but its custom NBR layer snapshot could not be stored.");
 }
 
 export async function createQuotation(input: CreateQuotationInput): Promise<SaveQuotationResult> {
@@ -238,24 +306,7 @@ export async function createQuotation(input: CreateQuotationInput): Promise<Save
   }
   if (quotationInsertError) throw new Error("Could not save the quotation.");
 
-  const { error: itemError } = await client.from("quotation_items").insert(quotation.items.map((item, index) => ({
-    quotation_id: quotation.id,
-    variant_id: item.variantId,
-    product_name: item.productName,
-    configuration: item.configuration,
-    requested_quantity: item.requestedQuantity,
-    requested_unit: item.requestedUnit,
-    supplied_quantity: item.suppliedQuantity,
-    supplied_unit: item.suppliedUnit,
-    cartons: item.cartons || null,
-    technical_quantity: item.technicalQuantity,
-    rate: item.rate,
-    quoted_rate: item.rate,
-    rate_unit: item.rateUnit,
-    amount: item.amount,
-    sort_order: index,
-  })));
-  if (itemError) throw new Error("The quotation was saved, but its line items could not be stored.");
+  await persistQuotationItems(client, quotation.id, quotation.items);
   return { quotation, mode };
 }
 
@@ -263,7 +314,7 @@ export async function createQuotation(input: CreateQuotationInput): Promise<Save
 export async function createAdminQuotation(input: CreateAdminQuotationInput): Promise<SaveQuotationResult> {
   const items: QuotationLineRecord[] = input.items.map((item) => ({
     ...item,
-    amount: Number((item.suppliedQuantity * item.rate).toFixed(2)),
+    amount: item.customBuiltUp?.quotedOverrideAmount ?? item.customBuiltUp?.calculatedBasicAmount ?? Number((item.suppliedQuantity * item.rate).toFixed(2)),
     provisional: true,
   }));
   const subtotal = Number(items.reduce((total, item) => total + item.amount, 0).toFixed(2));
@@ -428,7 +479,7 @@ function revisionNumberAndQuoteNumber(source: QuotationRecord, family: Quotation
 }
 
 function revisedLineItems(items: CreateQuotationRevisionInput["items"]): QuotationLineRecord[] {
-  return items.map((item) => ({ ...item, amount: Number((item.suppliedQuantity * item.rate).toFixed(2)), provisional: true }));
+  return items.map((item) => ({ ...item, amount: item.customBuiltUp?.quotedOverrideAmount ?? item.customBuiltUp?.calculatedBasicAmount ?? Number((item.suppliedQuantity * item.rate).toFixed(2)), provisional: true }));
 }
 
 export async function createAdminQuotationRevision(id: string, input: CreateQuotationRevisionInput): Promise<QuotationRecord | null> {
@@ -459,8 +510,7 @@ export async function createAdminQuotationRevision(id: string, input: CreateQuot
   const identity = revisionNumberAndQuoteNumber(source, family); const items = revisedLineItems(input.items); const subtotal = Number(items.reduce((total, item) => total + item.amount, 0).toFixed(2)); const gstAmount = Number((subtotal * (input.gstRate / 100)).toFixed(2)); const validUntil = input.validUntil || source.validUntil || validityDate(createdAt, source.validityDays);
   const { data: revisionRow, error: insertError } = await client.from("quotations").insert({ quote_number: identity.quoteNumber, access_token: randomUUID().replaceAll("-", ""), customer: input.customer, customer_id: source.customerId || null, project_id: source.projectId || null, enquiry_id: source.enquiryId || null, subtotal, gst_rate: input.gstRate, gst_amount: gstAmount, total: Number((subtotal + gstAmount).toFixed(2)), transport: source.transport, payment_terms: source.paymentTerms, validity_days: source.validityDays, valid_until: validUntil, source: "admin_created", revision_number: identity.revisionNumber, parent_quotation_id: rootId, status: "revised", is_provisional: true, internal_notes: input.internalNotes || source.internalNotes || null }).select("*").single();
   if (insertError || !revisionRow) throw new Error("Could not create the revised quotation.");
-  const { error: itemError } = await client.from("quotation_items").insert(items.map((item, index) => ({ quotation_id: revisionRow.id, variant_id: item.variantId, product_name: item.productName, configuration: item.configuration, requested_quantity: item.requestedQuantity, requested_unit: item.requestedUnit, supplied_quantity: item.suppliedQuantity, supplied_unit: item.suppliedUnit, cartons: item.cartons || null, technical_quantity: item.technicalQuantity, rate: item.rate, quoted_rate: item.rate, rate_unit: item.rateUnit, amount: item.amount, sort_order: index, override_reason: input.reason, snapshot: item })));
-  if (itemError) throw new Error("The revised quotation was created, but its line items could not be saved.");
+  await persistQuotationItems(client, revisionRow.id, items);
   await client.from("quotation_notes").insert([{ quotation_id: revisionRow.id, note: `Revision ${identity.revisionNumber} created: ${input.reason}` }, { quotation_id: source.id, note: `Revision ${identity.revisionNumber} created as ${identity.quoteNumber}: ${input.reason}` }]);
   return quotationFromRow(revisionRow as Record<string, unknown>, items.map((item) => ({ variant_id: item.variantId, product_name: item.productName, configuration: item.configuration, requested_quantity: item.requestedQuantity, requested_unit: item.requestedUnit, supplied_quantity: item.suppliedQuantity, supplied_unit: item.suppliedUnit, cartons: item.cartons, technical_quantity: item.technicalQuantity, quoted_rate: item.rate, rate_unit: item.rateUnit, amount: item.amount })));
 }
