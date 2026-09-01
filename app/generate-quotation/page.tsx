@@ -132,6 +132,7 @@ function GenerateQuotationWorkspace() {
   const [customerOverride, setCustomerOverride] = useState<Customer | null>(null);
   const [turnstileToken, setTurnstileToken] = useState("");
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"info" | "error">("info");
   const [submitting, setSubmitting] = useState(false);
   const [approvedRates, setApprovedRates] = useState<Record<string, ApprovedRate>>({});
   const [rateErrors, setRateErrors] = useState<Record<string, string>>({});
@@ -304,6 +305,7 @@ function GenerateQuotationWorkspace() {
     updateRows((current) => current.filter((row) => row.id !== rowId));
   };
   const addBatchRows = () => {
+    setMessageTone("info");
     setMessage("");
     if (!batchSelection.thicknesses.length) return setMessage("Select at least one thickness to add configuration rows.");
     const rows = batchSelection.thicknesses.flatMap((thickness) => {
@@ -330,8 +332,11 @@ function GenerateQuotationWorkspace() {
     event.preventDefault();
     if (!customer) return;
     const invalidRow = rowCalculations.find((entry) => entry.error);
-    if (invalidRow || !configuredLines.length) return setMessage(invalidRow?.error || "Add at least one product configuration before generating the quotation.");
-    setSubmitting(true); setMessage("");
+    if (invalidRow || !configuredLines.length) {
+      setMessageTone("error");
+      return setMessage(invalidRow?.error || "Add at least one product configuration before generating the quotation.");
+    }
+    setSubmitting(true); setMessage(""); setMessageTone("info");
     try {
       const response = await customerFetch("/api/quotations", {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -342,6 +347,7 @@ function GenerateQuotationWorkspace() {
       clearQuoteLeadDraft();
       router.push(`/quotation/success/${result.quotation.id}?token=${encodeURIComponent(result.quotation.accessToken)}`);
     } catch (error) {
+      setMessageTone("error");
       setMessage(error instanceof Error ? error.message : "We could not generate the quotation.");
       setTurnstileToken("");
       window.dispatchEvent(new Event("rac:turnstile-reset"));
@@ -431,7 +437,7 @@ function GenerateQuotationWorkspace() {
           <label className="quotation-notes">Billing address<textarea value={customer.billingAddress || ""} onChange={(event) => updateCustomer("billingAddress", event.target.value)} placeholder="Optional billing address" rows={3} /></label><label className="quotation-notes">Shipping address<textarea value={customer.shippingAddress || ""} onChange={(event) => updateCustomer("shippingAddress", event.target.value)} placeholder="Optional delivery address" rows={3} /></label>
         </div>
         <TurnstileWidget onVerify={verifyTurnstile} />
-        {message && <p className="quotation-message" role="status">{message}</p>}
+        {message && <p className={`quotation-message ${messageTone}`} role="status">{message}</p>}
         <div className="quotation-submit-row"><a href={whatsappContactHref("a quotation configuration")} className="quotation-contact" target="_blank" rel="noreferrer"><MessageCircle size={17} /> Contact RAC on WhatsApp</a><button type="submit" className="quotation-primary" disabled={submitting}>{submitting ? "Generating quotation..." : "Generate quotation"}<ArrowRight size={17} /></button></div>
       </form>
     </section>

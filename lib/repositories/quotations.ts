@@ -78,8 +78,33 @@ async function liveQuoteNumber() {
   const client = getSupabaseServiceClient();
   if (!client) throw new Error("Supabase service client is unavailable.");
   const { data, error } = await client.rpc("next_rac_quote_number");
-  if (error || !data) throw new Error("Could not allocate a quotation number.");
-  return String(data);
+  if (!error && data) return String(data);
+
+  // A production database can be created before the optional RPC helper is
+  // applied. Do not make commercial quotation issuance depend on that single
+  // helper: the trusted service client can safely calculate the next daily
+  // reference from the existing quotation records as a compatibility path.
+  // The normal RPC remains preferred because it has a database advisory lock.
+  console.warn("next_rac_quote_number RPC is unavailable; using compatibility allocation", {
+    code: error?.code,
+    message: error?.message,
+  });
+  const prefix = quotePrefix();
+  const { data: existing, error: lookupError } = await client
+    .from("quotations")
+    .select("quote_number")
+    .like("quote_number", `${prefix}-%`)
+    .limit(1000);
+  if (lookupError) throw new Error("Quotation numbering is temporarily unavailable. Please try again shortly.");
+  const nextNumber = (existing || []).reduce((highest, row) => {
+    const match = /-(\d+)$/.exec(String(row.quote_number || ""));
+    return Math.max(highest, match ? Number(match[1]) : 0);
+  }, 0) + 1;
+  return `${prefix}-${String(nextNumber).padStart(4, "0")}`;
+}
+
+function isQuoteNumberConflict(error: { code?: string | null; message?: string | null } | null) {
+  return error?.code === "23505" && /quote_number/i.test(error.message || "");
 }
 
 function validityDate(createdAt: string, days: number) {
@@ -175,30 +200,43 @@ export async function createQuotation(input: CreateQuotationInput): Promise<Save
 
   const client = getSupabaseServiceClient();
   if (!client) throw new Error("Supabase service client is unavailable.");
-  const { error } = await client.from("quotations").insert({
-    id: quotation.id,
-    quote_number: quotation.quoteNumber,
-    access_token: quotation.accessToken,
-    customer: quotation.customer,
-    subtotal: quotation.subtotal,
-    gst_rate: quotation.gstRate,
-    gst_amount: quotation.gstAmount,
-    total: quotation.total,
-    transport: quotation.transport,
-    payment_terms: quotation.paymentTerms,
-    validity_days: quotation.validityDays,
-    valid_until: quotation.validUntil,
-    source: quotation.source,
-    customer_id: quotation.customerId || null,
-    account_id: quotation.accountId || null,
-    project_id: quotation.projectId || null,
-    enquiry_id: quotation.enquiryId || null,
-    revision_number: quotation.revisionNumber,
-    status: quotation.status,
-    is_provisional: quotation.isProvisional,
-    internal_notes: quotation.internalNotes || null,
-  });
-  if (error) throw new Error("Could not save the quotation.");
+  // The compatibility allocator reads the latest daily number. A rare
+  // simultaneous request can select the same number, so retry the insert with
+  // a newly allocated reference if the unique quote-number rule catches it.
+  let quotationInsertError: { code?: string | null; message?: string | null } | null = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const { error } = await client.from("quotations").insert({
+      id: quotation.id,
+      quote_number: quotation.quoteNumber,
+      access_token: quotation.accessToken,
+      customer: quotation.customer,
+      subtotal: quotation.subtotal,
+      gst_rate: quotation.gstRate,
+      gst_amount: quotation.gstAmount,
+      total: quotation.total,
+      transport: quotation.transport,
+      payment_terms: quotation.paymentTerms,
+      validity_days: quotation.validityDays,
+      valid_until: quotation.validUntil,
+      source: quotation.source,
+      customer_id: quotation.customerId || null,
+      account_id: quotation.accountId || null,
+      project_id: quotation.projectId || null,
+      enquiry_id: quotation.enquiryId || null,
+      revision_number: quotation.revisionNumber,
+      status: quotation.status,
+      is_provisional: quotation.isProvisional,
+      internal_notes: quotation.internalNotes || null,
+    });
+    if (!error) {
+      quotationInsertError = null;
+      break;
+    }
+    quotationInsertError = error;
+    if (!isQuoteNumberConflict(error) || attempt === 2) break;
+    quotation.quoteNumber = await liveQuoteNumber();
+  }
+  if (quotationInsertError) throw new Error("Could not save the quotation.");
 
   const { error: itemError } = await client.from("quotation_items").insert(quotation.items.map((item, index) => ({
     quotation_id: quotation.id,
