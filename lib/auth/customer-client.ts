@@ -2,7 +2,7 @@
 
 import type { CustomerAccount } from "@/lib/db/types";
 import { env } from "@/lib/env";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getCustomerSupabaseBrowserClient } from "@/lib/supabase/client";
 
 const mockSessionKey = "rac-dev-customer-session";
 export type CustomerBrowserSession = { accountId: string; email: string; isMock: boolean; accessToken?: string };
@@ -25,14 +25,14 @@ function saveMockSession(account: CustomerAccount, accessToken: string) {
 }
 
 export async function customerFetch(input: RequestInfo | URL, init: RequestInit = {}) {
-  const client = getSupabaseBrowserClient(); const headers = new Headers(init.headers);
+  const client = getCustomerSupabaseBrowserClient(); const headers = new Headers(init.headers);
   if (client) { const { data: { session } } = await client.auth.getSession(); if (session?.access_token) headers.set("Authorization", `Bearer ${session.access_token}`); }
   else { const session = readMockSession(); if (session?.accessToken) headers.set("Authorization", `Bearer ${session.accessToken}`); }
   return fetch(input, { ...init, headers });
 }
 
 export async function signInCustomer(identity: string, password: string): Promise<CustomerBrowserSession | { requiresEmailVerification: true }> {
-  const client = getSupabaseBrowserClient();
+  const client = getCustomerSupabaseBrowserClient();
   if (client) {
     const isEmail = identity.includes("@");
     if (!isEmail) throw new Error("Use the verified email address for sign-in. Mobile OTP sign-in can be enabled when RAC approves an SMS provider.");
@@ -48,7 +48,7 @@ export async function signInCustomer(identity: string, password: string): Promis
 }
 
 export async function signUpCustomer(input: { fullName: string; companyName?: string; email: string; mobile: string; gstin?: string; customerType: CustomerAccount["customerType"]; password: string; intent?: string }) {
-  const client = getSupabaseBrowserClient();
+  const client = getCustomerSupabaseBrowserClient();
   if (client) {
     const redirect = new URL("/auth/callback", window.location.origin);
     if (input.intent) redirect.searchParams.set("intent", input.intent);
@@ -75,7 +75,7 @@ export async function signUpCustomer(input: { fullName: string; companyName?: st
  * to an RAC account.
  */
 export async function requestCustomerPasswordReset(email: string, intent?: string) {
-  const client = getSupabaseBrowserClient();
+  const client = getCustomerSupabaseBrowserClient();
   if (!client) throw new Error("Password-reset email is available when Supabase production authentication is configured.");
   const redirect = new URL("/account/reset-password", window.location.origin);
   if (intent) redirect.searchParams.set("intent", intent);
@@ -84,7 +84,7 @@ export async function requestCustomerPasswordReset(email: string, intent?: strin
 }
 
 export async function updateCustomerPassword(password: string) {
-  const client = getSupabaseBrowserClient();
+  const client = getCustomerSupabaseBrowserClient();
   if (!client) throw new Error("Password updates are available when Supabase production authentication is configured.");
   if (password.length < 8) throw new Error("Use a password of at least 8 characters.");
   const { error } = await client.auth.updateUser({ password });
@@ -93,9 +93,9 @@ export async function updateCustomerPassword(password: string) {
 }
 
 export async function getCustomerSession() {
-  const client = getSupabaseBrowserClient();
+  const client = getCustomerSupabaseBrowserClient();
   if (client) { const { data: { user } } = await client.auth.getUser(); return user ? { accountId: user.id, email: user.email || "", isMock: false } : null; }
   return readMockSession();
 }
 
-export async function signOutCustomer() { const client = getSupabaseBrowserClient(); if (client) await client.auth.signOut(); if (typeof window !== "undefined") window.sessionStorage.removeItem(mockSessionKey); }
+export async function signOutCustomer() { const client = getCustomerSupabaseBrowserClient(); if (client) await client.auth.signOut(); if (typeof window !== "undefined") window.sessionStorage.removeItem(mockSessionKey); }

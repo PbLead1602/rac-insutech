@@ -3,9 +3,12 @@ import "server-only";
 import { randomUUID } from "crypto";
 import { integrationMode, type IntegrationMode } from "@/lib/env";
 import { serverEnv } from "@/lib/env/server";
-import type { CustomerNote, CustomerRecord, CustomerStatus, CustomerType, QuotationCustomer } from "@/lib/db/types";
+import type { CustomerNote, CustomerRecord, CustomerStatus, CustomerType, EnquiryRecord, ProjectRecord, QuotationCustomer, QuotationRecord } from "@/lib/db/types";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { persistentDevelopmentStore } from "@/lib/development/persistent-store";
+import { listAdminEnquiriesForCustomer } from "@/lib/repositories/enquiries";
+import { listAdminProjectsForCustomer } from "@/lib/repositories/projects";
+import { listAdminQuotationsForCustomer } from "@/lib/repositories/quotations";
 
 type DevelopmentStore = { customers: CustomerRecord[]; customerNotes: CustomerNote[] };
 
@@ -16,7 +19,15 @@ function developmentStore(): DevelopmentStore {
 }
 
 export type CustomerInput = Omit<CustomerRecord, "id" | "createdAt">;
-export type CustomerDetail = { customer: CustomerRecord; notes: CustomerNote[]; linked: { enquiries: number; quotations: number; projects: number } };
+export type CustomerDetail = {
+  customer: CustomerRecord;
+  notes: CustomerNote[];
+  linked: {
+    enquiries: EnquiryRecord[];
+    quotations: QuotationRecord[];
+    projects: ProjectRecord[];
+  };
+};
 export type SaveCustomerResult = { customer: CustomerRecord; mode: IntegrationMode };
 
 export class CustomerConflictError extends Error {}
@@ -132,7 +143,13 @@ export async function getAdminCustomer(id: string): Promise<CustomerDetail | nul
   const mode = integrationMode(serverEnv.supabaseServiceConfigured);
   if (mode === "mock") {
     const customer = developmentStore().customers.find((item) => item.id === id);
-    return customer ? { customer, notes: developmentStore().customerNotes.filter((note) => note.customerId === id), linked: { enquiries: 0, quotations: 0, projects: 0 } } : null;
+    if (!customer) return null;
+    const [enquiries, quotations, projects] = await Promise.all([
+      listAdminEnquiriesForCustomer(id),
+      listAdminQuotationsForCustomer(id),
+      listAdminProjectsForCustomer(id),
+    ]);
+    return { customer, notes: developmentStore().customerNotes.filter((note) => note.customerId === id), linked: { enquiries, quotations, projects } };
   }
   if (mode === "unconfigured") throw new Error("Customer storage is not configured.");
   const client = getSupabaseServiceClient();
@@ -140,13 +157,13 @@ export async function getAdminCustomer(id: string): Promise<CustomerDetail | nul
   const [{ data, error }, { data: notes, error: noteError }, enquiries, quotations, projects] = await Promise.all([
     client.from("customers").select("*").eq("id", id).maybeSingle(),
     client.from("customer_notes").select("id, customer_id, note, created_at").eq("customer_id", id).order("created_at", { ascending: false }),
-    client.from("enquiries").select("id", { count: "exact", head: true }).eq("customer_id", id),
-    client.from("quotations").select("id", { count: "exact", head: true }).eq("customer_id", id),
-    client.from("projects").select("id", { count: "exact", head: true }).eq("customer_id", id),
+    listAdminEnquiriesForCustomer(id),
+    listAdminQuotationsForCustomer(id),
+    listAdminProjectsForCustomer(id),
   ]);
-  if (error || noteError || enquiries.error || quotations.error || projects.error) throw new Error("Could not load the customer.");
+  if (error || noteError) throw new Error("Could not load the customer.");
   if (!data) return null;
-  return { customer: toCustomerRecord(data as Record<string, unknown>), notes: (notes || []).map((note) => ({ id: note.id, customerId: note.customer_id, note: note.note, createdAt: note.created_at })), linked: { enquiries: enquiries.count || 0, quotations: quotations.count || 0, projects: projects.count || 0 } };
+  return { customer: toCustomerRecord(data as Record<string, unknown>), notes: (notes || []).map((note) => ({ id: note.id, customerId: note.customer_id, note: note.note, createdAt: note.created_at })), linked: { enquiries, quotations, projects } };
 }
 
 export async function updateAdminCustomer(id: string, patch: Partial<CustomerInput>): Promise<CustomerRecord | null> {

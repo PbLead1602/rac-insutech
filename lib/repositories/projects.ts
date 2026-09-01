@@ -28,6 +28,17 @@ export async function listAdminProjects(query = ""): Promise<ProjectRecord[]> {
   return (data || []).map((row) => toProjectRecord(row as Record<string, unknown>));
 }
 
+/** Returns every project associated with a selected customer record. */
+export async function listAdminProjectsForCustomer(customerId: string): Promise<ProjectRecord[]> {
+  const mode = integrationMode(serverEnv.supabaseServiceConfigured);
+  if (mode === "mock") return developmentStore().projects.filter((item) => item.customerId === customerId);
+  if (mode === "unconfigured") throw new Error("Project storage is not configured.");
+  const client = getSupabaseServiceClient(); if (!client) throw new Error("Supabase service client is unavailable.");
+  const { data, error } = await client.from("projects").select("*").eq("customer_id", customerId).order("created_at", { ascending: false }).limit(500);
+  if (error) throw new Error("Could not load the customer's projects.");
+  return (data || []).map((row) => toProjectRecord(row as Record<string, unknown>));
+}
+
 export async function createAdminProject(input: ProjectInput): Promise<SaveProjectResult> {
   const mode = integrationMode(serverEnv.supabaseServiceConfigured); if (mode === "unconfigured") throw new Error("Project storage is not configured.");
   const baseSlug = slugify(input.title);

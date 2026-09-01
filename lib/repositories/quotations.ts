@@ -276,6 +276,17 @@ export async function listAdminQuotations(query = ""): Promise<QuotationRecord[]
   return (data || []).map((row) => quotationFromRow(row as Record<string, unknown>));
 }
 
+/** Returns the full commercial history for a selected customer record. */
+export async function listAdminQuotationsForCustomer(customerId: string): Promise<QuotationRecord[]> {
+  const mode = integrationMode(serverEnv.supabaseServiceConfigured);
+  if (mode === "mock") return developmentStore().quotations.filter((item) => item.customerId === customerId);
+  if (mode === "unconfigured") throw new Error("Quotation storage is not configured.");
+  const client = getSupabaseServiceClient(); if (!client) throw new Error("Supabase service client is unavailable.");
+  const { data, error } = await client.from("quotations").select("*").eq("customer_id", customerId).order("created_at", { ascending: false }).limit(500);
+  if (error) throw new Error("Could not load the customer's quotations.");
+  return (data || []).map((row) => quotationFromRow(row as Record<string, unknown>));
+}
+
 export async function getAdminQuotation(id: string): Promise<{ quotation: QuotationRecord; notes: QuotationNote[] } | null> {
   const mode = integrationMode(serverEnv.supabaseServiceConfigured);
   if (mode === "mock") {

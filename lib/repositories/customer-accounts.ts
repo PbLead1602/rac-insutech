@@ -27,6 +27,7 @@ export type CustomerAccountContext = { account: CustomerAccount; customer?: Cust
 export type CustomerPortalData = { account: CustomerAccount; customer?: CustomerRecord; enquiries: EnquiryRecord[]; quotations: QuotationRecord[]; projects: import("@/lib/db/types").ProjectRecord[]; documents: import("@/lib/db/types").DocumentRecord[]; revisionRequests: import("@/lib/db/types").CustomerRevisionRequest[] };
 
 function normalise(value?: string) { return value?.trim().toLowerCase() || ""; }
+function normalisePhone(value?: string) { return value?.replace(/\D/g, "") || ""; }
 function hashToken(value: string) { return createHash("sha256").update(value).digest("hex"); }
 function hashPassword(value: string) { return createHash("sha256").update(`rac-development-password:${value}`).digest("hex"); }
 function passwordsMatch(left: string, right: string) { const a = Buffer.from(left); const b = Buffer.from(right); return a.length === b.length && timingSafeEqual(a, b); }
@@ -149,6 +150,44 @@ export async function attachContinuationToAccount(token: string, account: Custom
   if (continuationError || accountError) throw new Error("Could not attach the enquiry to your account.");
   const linked = await linkEnquiryToAccount(enquiryId, account.id); if (!linked) throw new Error("The enquiry could not be linked to this account.");
   if (account.status === "active" && account.customerId) return (await updateAdminEnquiry(enquiryId, { accountId: account.id, customerId: account.customerId, status: "qualified" })) || linked;
+  return linked;
+}
+
+/**
+ * Proves that a quotation's source enquiry belongs to the active account and
+ * repairs an eligible public enquiry before issuing commercial pricing. This
+ * removes a timing race between the continuation redirect and the first quote
+ * submission without allowing one customer to claim another customer's lead.
+ */
+export async function ensureEnquiryBelongsToCustomerAccount(enquiryId: string, context: CustomerAccountContext): Promise<EnquiryRecord> {
+  if (!context.customer) throw new Error("Your customer profile is not ready yet. Please contact RAC.");
+  const detail = await getAdminEnquiry(enquiryId);
+  if (!detail) throw new Error("The selected enquiry could not be found.");
+  const enquiry = detail.enquiry;
+  if (enquiry.accountId && enquiry.accountId !== context.account.id) {
+    throw new Error("This enquiry belongs to a different customer account.");
+  }
+  if (enquiry.customerId && enquiry.customerId !== context.customer.id) {
+    throw new Error("This enquiry belongs to a different customer.");
+  }
+
+  // An old unlinked enquiry can be restored only when its recorded contact
+  // identity matches the authenticated customer. Enquiries created while a
+  // customer is already signed in are linked at submission time instead.
+  if (!enquiry.accountId && !enquiry.customerId) {
+    const emailMatches = Boolean(enquiry.email && normalise(enquiry.email) === normalise(context.account.email));
+    const mobileMatches = Boolean(enquiry.mobile && normalisePhone(enquiry.mobile) === normalisePhone(context.account.mobile));
+    if (!emailMatches && !mobileMatches) {
+      throw new Error("This enquiry is not linked to your customer account. Please start a new enquiry while signed in or contact RAC.");
+    }
+  }
+
+  if (enquiry.accountId === context.account.id && enquiry.customerId === context.customer.id) return enquiry;
+  const linked = await updateAdminEnquiry(enquiryId, {
+    accountId: context.account.id,
+    customerId: context.customer.id,
+  });
+  if (!linked) throw new Error("The enquiry could not be linked to your customer account.");
   return linked;
 }
 

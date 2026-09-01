@@ -6,7 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import type { LucideIcon } from "lucide-react";
 import { Activity, Archive, ArrowRight, BellRing, BookOpen, Boxes, BriefcaseBusiness, Building2, ChevronLeft, ChevronRight, ClipboardList, FileText, FolderCog, GalleryVerticalEnd, HandCoins, LayoutDashboard, LogOut, Menu, PackagePlus, Plus, Search, Settings, ShieldCheck, SlidersHorizontal, UserCheck, UsersRound } from "lucide-react";
 import { adminFetch, getAdminSession, signInAdmin, signOutAdmin, type AdminSession } from "@/lib/auth/admin-client";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getAdminSupabaseBrowserClient } from "@/lib/supabase/client";
 import AdminEnquiriesPanel from "@/components/admin-enquiries-panel";
 import AdminQuotationsPanel from "@/components/admin-quotations-panel";
 import AdminCustomersPanel from "@/components/admin-customers-panel";
@@ -91,7 +91,7 @@ function sectionFromPath(pathname: string): AdminSection {
 }
 
 async function loadDashboard(): Promise<DashboardData> {
-  const client = getSupabaseBrowserClient();
+  const client = getAdminSupabaseBrowserClient();
   if (!client) {
     const [quotesResponse, enquiriesResponse, productsResponse, accountsResponse] = await Promise.all([adminFetch("/api/admin/quotations", { cache: "no-store" }), adminFetch("/api/admin/enquiries", { cache: "no-store" }), adminFetch("/api/admin/products", { cache: "no-store" }), adminFetch("/api/admin/customer-accounts?status=pending_admin_approval", { cache: "no-store" })]);
     const quoteData = quotesResponse.ok ? await quotesResponse.json() as { quotations?: Array<{ id: string; quoteNumber: string; customer: { company: string }; total: number; createdAt: string; status: string }> } : {};
@@ -113,6 +113,14 @@ async function loadDashboard(): Promise<DashboardData> {
 export default function AdminOperatingSystem() {
   const pathname = usePathname(); const router = useRouter(); const section = sectionFromPath(pathname); const [session, setSession] = useState<AdminSession | null | undefined>(); const [dashboard, setDashboard] = useState(emptyDashboard); const [collapsed, setCollapsed] = useState(false); const [mobileOpen, setMobileOpen] = useState(false); const [search, setSearch] = useState("");
   useEffect(() => { getAdminSession().then(async (nextSession) => { setSession(nextSession); if (nextSession) setDashboard(await loadDashboard()); }); }, []);
+  useEffect(() => {
+    if (!session) return;
+    let active = true;
+    const refreshDashboard = () => { if (document.visibilityState === "visible") void loadDashboard().then((next) => { if (active) setDashboard(next); }).catch(() => undefined); };
+    const timer = window.setInterval(refreshDashboard, 20_000);
+    document.addEventListener("visibilitychange", refreshDashboard);
+    return () => { active = false; window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshDashboard); };
+  }, [session]);
   const results = useMemo(() => { const query = search.toLowerCase().trim(); return !query ? [] : [...dashboard.recent.map((item) => ({ label: item.name, detail: `Enquiry · ${item.product || "Requirement"}`, href: "/admin/enquiries" })), ...dashboard.recentQuotations.map((item) => ({ label: item.quoteNumber, detail: `Quotation · ${item.company}`, href: "/admin/quotations" }))].filter((item) => `${item.label} ${item.detail}`.toLowerCase().includes(query)).slice(0, 6); }, [dashboard, search]);
   if (session === undefined) return <main className="admin-loading">Loading RAC Admin…</main>;
   if (!session) return <AdminLogin onSuccess={async (nextSession) => { setSession(nextSession); setDashboard(await loadDashboard()); }} />;

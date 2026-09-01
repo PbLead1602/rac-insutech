@@ -1,20 +1,79 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { CheckCircle2, ChevronRight, CircleAlert, Clock3, Mail, MapPin, ShieldCheck, UserRound, XCircle } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { CheckCircle2, ChevronRight, CircleAlert, Clock3, Mail, MapPin, RefreshCw, ShieldCheck, UserRound, XCircle } from "lucide-react";
 import { adminFetch } from "@/lib/auth/admin-client";
 import type { CustomerAccount, CustomerAccountStatus, EnquiryRecord } from "@/lib/db/types";
 
 type Detail = { account: CustomerAccount; enquiry?: EnquiryRecord };
 type Filter = "all" | CustomerAccountStatus;
-const filters: Array<{ id: Filter; label: string }> = [{ id: "all", label: "All accounts" }, { id: "pending_admin_approval", label: "Awaiting approval" }, { id: "pending_email_verification", label: "Email verification" }, { id: "active", label: "Approved" }, { id: "rejected", label: "Rejected" }, { id: "suspended", label: "Suspended" }];
+const filters: Array<{ id: Filter; label: string }> = [
+  { id: "all", label: "All accounts" }, { id: "pending_admin_approval", label: "Awaiting approval" }, { id: "pending_email_verification", label: "Email verification" }, { id: "active", label: "Approved" }, { id: "rejected", label: "Rejected" }, { id: "suspended", label: "Suspended" },
+];
+const statusLabel = (status: string) => status.replaceAll("_", " ");
 
 export default function AdminAccountApprovalsPanel() {
-  const [accounts, setAccounts] = useState<CustomerAccount[]>([]); const [filter, setFilter] = useState<Filter>("pending_admin_approval"); const [detail, setDetail] = useState<Detail>(); const [busy, setBusy] = useState(false); const [message, setMessage] = useState(""); const [reason, setReason] = useState("");
-  const load = useCallback(async () => { const url = filter === "all" ? "/api/admin/customer-accounts" : `/api/admin/customer-accounts?status=${filter}`; const response = await adminFetch(url, { cache: "no-store" }); const data = await response.json() as { ok?: boolean; accounts?: CustomerAccount[]; message?: string }; if (!response.ok || !data.accounts) throw new Error(data.message || "Could not load account approvals."); setAccounts(data.accounts); }, [filter]);
-  useEffect(() => { const timer = window.setTimeout(() => { void load().catch((error) => setMessage(error instanceof Error ? error.message : "Could not load account approvals.")); }, 0); return () => window.clearTimeout(timer); }, [load]);
-  const open = async (id: string) => { setBusy(true); setMessage(""); try { const response = await adminFetch(`/api/admin/customer-accounts/${id}`, { cache: "no-store" }); const data = await response.json() as { ok?: boolean; account?: CustomerAccount; enquiry?: EnquiryRecord; message?: string }; if (!response.ok || !data.account) throw new Error(data.message || "Could not open the account request."); setDetail({ account: data.account, enquiry: data.enquiry }); setReason(""); } catch (error) { setMessage(error instanceof Error ? error.message : "Could not open the account request."); } finally { setBusy(false); } };
-  const act = async (action: "approve" | "reject" | "suspend" | "restore_pending") => { if (!detail) return; if (["reject", "suspend"].includes(action) && !reason.trim()) { setMessage("Enter a reason before restricting customer access."); return; } setBusy(true); setMessage(""); try { const response = await adminFetch(`/api/admin/customer-accounts/${detail.account.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, reason }) }); const data = await response.json() as { ok?: boolean; account?: CustomerAccount; message?: string }; if (!response.ok || !data.account) throw new Error(data.message || "Could not update the account."); setDetail((current) => current ? { ...current, account: data.account! } : current); await load(); setMessage(action === "approve" ? "Account approved and customer profile linked." : "Account status updated."); } catch (error) { setMessage(error instanceof Error ? error.message : "Could not update the account."); } finally { setBusy(false); } };
+  const [accounts, setAccounts] = useState<CustomerAccount[]>([]);
+  const [filter, setFilter] = useState<Filter>("pending_admin_approval");
+  const [detail, setDetail] = useState<Detail>();
+  const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [reason, setReason] = useState("");
+
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const response = await adminFetch("/api/admin/customer-accounts", { cache: "no-store" });
+      const data = await response.json() as { accounts?: CustomerAccount[]; message?: string };
+      if (!response.ok || !data.accounts) throw new Error(data.message || "Could not load account approvals.");
+      setAccounts(data.accounts);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not load account approvals.");
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { const timer = window.setTimeout(() => { void load(); }, 0); return () => window.clearTimeout(timer); }, [load]);
+  useEffect(() => {
+    const refreshWhenVisible = () => { if (document.visibilityState === "visible") void load(true); };
+    const timer = window.setInterval(refreshWhenVisible, 20_000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshWhenVisible); };
+  }, [load]);
+
+  const visibleAccounts = useMemo(() => filter === "all" ? accounts : accounts.filter((account) => account.status === filter), [accounts, filter]);
   const pending = accounts.filter((account) => account.status === "pending_admin_approval").length;
-  return <div className="admin-os-content admin-account-approvals"><section className="admin-approval-intro"><div><p>ACCOUNT VERIFICATION</p><h2>Approve commercial quotation access.</h2><span>An enquiry can be anonymous. A Customer is created only when this registered account is verified and approved.</span></div><b><Clock3 size={17} /> {pending} awaiting review</b></section><div className="admin-approval-layout"><section className="admin-approval-list"><div className="admin-approval-filters">{filters.map((item) => <button key={item.id} className={filter === item.id ? "active" : ""} onClick={() => setFilter(item.id)}>{item.label}</button>)}</div>{message && !detail && <p className="admin-records-message">{message}</p>}<div className="admin-approval-rows">{accounts.length ? accounts.map((account) => <button key={account.id} className={detail?.account.id === account.id ? "active" : ""} onClick={() => void open(account.id)}><span className={`admin-approval-status ${account.status}`}>{account.status === "active" ? <CheckCircle2 size={15} /> : account.status === "rejected" || account.status === "suspended" ? <XCircle size={15} /> : <Clock3 size={15} />}</span><div><strong>{account.fullName}</strong><small>{account.companyName || "Company not supplied"}</small><small>{account.email} · {account.mobile}</small></div><em>{account.status.replaceAll("_", " ")}</em><ChevronRight size={17} /></button>) : <p className="admin-os-empty-text">No accounts match this view.</p>}</div></section><aside className="admin-approval-detail">{detail ? <><div className="admin-approval-detail-title"><div><p>REGISTRATION REVIEW</p><h3>{detail.account.fullName}</h3><span>{detail.account.status.replaceAll("_", " ")}</span></div><UserRound size={25} /></div><dl><div><dt>Company</dt><dd>{detail.account.companyName || "—"}</dd></div><div><dt>Customer type</dt><dd>{detail.account.customerType.replaceAll("_", " ")}</dd></div><div><dt>Email</dt><dd><Mail size={13} /> {detail.account.email}</dd></div><div><dt>Mobile</dt><dd>{detail.account.mobile}</dd></div><div><dt>GSTIN</dt><dd>{detail.account.gstin || "Not supplied"}</dd></div><div><dt>Email verified</dt><dd>{detail.account.emailVerified ? "Yes" : "Waiting for verification"}</dd></div></dl>{detail.enquiry && <section className="admin-approval-enquiry"><p>RELATED ENQUIRY</p><strong>{detail.enquiry.enquiryNumber}</strong><span>{detail.enquiry.product || "General requirement"} · {detail.enquiry.quantity || "Quantity not supplied"}</span><span><MapPin size={13} /> {detail.enquiry.projectLocation || detail.enquiry.city || "Location not supplied"}</span><small>{detail.enquiry.message || "No additional requirement message."}</small></section>}{detail.account.status !== "active" && <label className="admin-approval-reason">Internal reason <small>{detail.account.status === "pending_admin_approval" ? "Optional for approval; required when rejecting or suspending." : "Required when restricting access."}</small><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Add an internal note or reason…" rows={3} /></label>}{message && <p className="admin-records-message">{message}</p>}<div className="admin-approval-actions">{detail.account.status === "pending_admin_approval" && <button className="admin-os-primary" disabled={busy || !detail.account.emailVerified} onClick={() => void act("approve")}><CheckCircle2 size={15} /> Approve account</button>}{detail.account.status === "pending_admin_approval" && <button className="admin-approval-danger" disabled={busy} onClick={() => void act("reject")}><XCircle size={15} /> Reject</button>}{detail.account.status === "active" && <button className="admin-approval-danger" disabled={busy} onClick={() => void act("suspend")}><CircleAlert size={15} /> Suspend access</button>}{["rejected", "suspended"].includes(detail.account.status) && <button className="admin-os-primary" disabled={busy} onClick={() => void act("restore_pending")}><ShieldCheck size={15} /> Return to review</button>}</div></> : <div className="admin-approval-empty"><ShieldCheck size={26} /><h3>Select an account to review</h3><p>Review registration information, the original enquiry and any duplicate-risk details before enabling quotation access.</p></div>}</aside></div></div>;
+  const setActiveFilter = (next: Filter) => { setFilter(next); setDetail(undefined); setReason(""); setMessage(""); };
+
+  const open = async (id: string) => {
+    setBusy(true); setMessage("");
+    try {
+      const response = await adminFetch(`/api/admin/customer-accounts/${id}`, { cache: "no-store" });
+      const data = await response.json() as { account?: CustomerAccount; enquiry?: EnquiryRecord; message?: string };
+      if (!response.ok || !data.account) throw new Error(data.message || "Could not open the account request.");
+      setDetail({ account: data.account, enquiry: data.enquiry }); setReason("");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not open the account request.");
+    } finally { setBusy(false); }
+  };
+
+  const act = async (action: "approve" | "reject" | "suspend" | "restore_pending") => {
+    if (!detail) return;
+    if (["reject", "suspend"].includes(action) && !reason.trim()) { setMessage("Enter a reason before restricting customer access."); return; }
+    setBusy(true); setMessage("");
+    try {
+      const response = await adminFetch(`/api/admin/customer-accounts/${detail.account.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, reason }) });
+      const data = await response.json() as { account?: CustomerAccount; message?: string };
+      if (!response.ok || !data.account) throw new Error(data.message || "Could not update the account.");
+      setDetail((current) => current ? { ...current, account: data.account! } : current);
+      await load(true);
+      setMessage(action === "approve" ? "Account approved and customer profile linked." : "Account status updated.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not update the account.");
+    } finally { setBusy(false); }
+  };
+
+  return <div className="admin-os-content admin-account-approvals"><section className="admin-approval-intro"><div><p>ACCOUNT VERIFICATION</p><h2>Approve commercial quotation access.</h2><span>An enquiry can be anonymous. A Customer is created only when this registered account is verified and approved.</span></div><b><Clock3 size={17} /> {pending} awaiting review</b></section><div className="admin-approval-layout"><section className="admin-approval-list"><div className="admin-approval-filters">{filters.map((item) => <button type="button" key={item.id} className={filter === item.id ? "active" : ""} aria-pressed={filter === item.id} onClick={() => setActiveFilter(item.id)}>{item.label}<span>{item.id === "all" ? accounts.length : accounts.filter((account) => account.status === item.id).length}</span></button>)}</div><div className="admin-approval-list-heading"><span>{loading ? "Updating accounts…" : `${visibleAccounts.length} account${visibleAccounts.length === 1 ? "" : "s"}`}</span><button type="button" onClick={() => void load()} aria-label="Refresh accounts"><RefreshCw size={14} />Refresh</button></div>{message && !detail && <p className="admin-records-message">{message}</p>}<div className="admin-approval-rows">{visibleAccounts.length ? visibleAccounts.map((account) => <button type="button" key={account.id} className={detail?.account.id === account.id ? "active" : ""} onClick={() => void open(account.id)}><span className={`admin-approval-status ${account.status}`}>{account.status === "active" ? <CheckCircle2 size={15} /> : account.status === "rejected" || account.status === "suspended" ? <XCircle size={15} /> : <Clock3 size={15} />}</span><div><strong>{account.fullName || "Registration pending details"}</strong><small>{account.companyName || "Company not supplied"}</small><small>{account.email} · {account.mobile || "Mobile not supplied"}</small></div><em>{statusLabel(account.status)}</em><ChevronRight size={17} /></button>) : <p className="admin-os-empty-text">No accounts match this view.</p>}</div></section><aside className="admin-approval-detail">{detail ? <><div className="admin-approval-detail-title"><div><p>REGISTRATION REVIEW</p><h3>{detail.account.fullName}</h3><span>{statusLabel(detail.account.status)}</span></div><UserRound size={25} /></div><dl><div><dt>Company</dt><dd>{detail.account.companyName || "—"}</dd></div><div><dt>Customer type</dt><dd>{detail.account.customerType.replaceAll("_", " ")}</dd></div><div><dt>Email</dt><dd><Mail size={13} /> {detail.account.email}</dd></div><div><dt>Mobile</dt><dd>{detail.account.mobile || "Not supplied"}</dd></div><div><dt>GSTIN</dt><dd>{detail.account.gstin || "Not supplied"}</dd></div><div><dt>Email verified</dt><dd>{detail.account.emailVerified ? "Yes" : "Waiting for verification"}</dd></div></dl>{detail.enquiry && <section className="admin-approval-enquiry"><p>RELATED ENQUIRY</p><strong>{detail.enquiry.enquiryNumber}</strong><span>{detail.enquiry.product || "General requirement"} · {detail.enquiry.quantity || "Quantity not supplied"}</span><span><MapPin size={13} /> {detail.enquiry.projectLocation || detail.enquiry.city || "Location not supplied"}</span><small>{detail.enquiry.message || "No additional requirement message."}</small></section>}{detail.account.status !== "active" && <label className="admin-approval-reason">Internal reason <small>{detail.account.status === "pending_admin_approval" ? "Optional for approval; required when rejecting or suspending." : "Required when restricting access."}</small><textarea value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Add an internal note or reason…" rows={3} /></label>}{message && <p className="admin-records-message">{message}</p>}<div className="admin-approval-actions">{detail.account.status === "pending_admin_approval" && <button className="admin-os-primary" disabled={busy || !detail.account.emailVerified} onClick={() => void act("approve")}><CheckCircle2 size={15} /> Approve account</button>}{detail.account.status === "pending_admin_approval" && <button className="admin-approval-danger" disabled={busy} onClick={() => void act("reject")}><XCircle size={15} /> Reject</button>}{detail.account.status === "active" && <button className="admin-approval-danger" disabled={busy} onClick={() => void act("suspend")}><CircleAlert size={15} /> Suspend access</button>}{["rejected", "suspended"].includes(detail.account.status) && <button className="admin-os-primary" disabled={busy} onClick={() => void act("restore_pending")}><ShieldCheck size={15} /> Return to review</button>}</div></> : <div className="admin-approval-empty"><ShieldCheck size={26} /><h3>Select an account to review</h3><p>Select a tab to segregate the account stage, then review registration information and the original enquiry before enabling quotation access.</p></div>}</aside></div></div>;
 }

@@ -17,6 +17,7 @@ function developmentStore(): DevelopmentStore {
 
 export type AttachmentInput = { name: string; type: string; size: number; buffer?: Buffer };
 export type SaveEnquiryResult = { enquiry: EnquiryRecord; mode: IntegrationMode; created: boolean };
+export type EnquiryIdentityLinks = { accountId?: string; customerId?: string };
 export type AdminEnquiryPatch = { status?: EnquiryStatus; followUpAt?: string; followUpNote?: string; internalNotes?: string; lostReason?: string; customerId?: string; projectId?: string; accountId?: string };
 
 function developmentEnquiryNumber() {
@@ -44,6 +45,7 @@ async function saveAttachment(file: AttachmentInput): Promise<{ name: string; ur
 export async function createEnquiry(
   input: RfqInput,
   file?: AttachmentInput,
+  links: EnquiryIdentityLinks = {},
 ): Promise<SaveEnquiryResult> {
   const mode = integrationMode(serverEnv.supabaseServiceConfigured);
   const attachment = file ? await saveAttachment(file) : undefined;
@@ -54,6 +56,8 @@ export async function createEnquiry(
     source: "website",
     status: "new",
     createdAt: new Date().toISOString(),
+    ...(links.accountId ? { accountId: links.accountId } : {}),
+    ...(links.customerId ? { customerId: links.customerId } : {}),
     ...(attachment ? { attachment } : {}),
   };
 
@@ -102,6 +106,8 @@ export async function createEnquiry(
     customer_type: enquiry.customerType || null,
     delivery_preference: enquiry.deliveryPreference || null,
     message: enquiry.message || null,
+    account_id: links.accountId || null,
+    customer_id: links.customerId || null,
     public_submission_id: input.submissionId || null,
     source: "website",
     status: "new",
@@ -147,6 +153,18 @@ export async function listAdminEnquiries(query = ""): Promise<EnquiryRecord[]> {
   if (query.trim()) request = request.or(`name.ilike.%${query.trim()}%,company.ilike.%${query.trim()}%,mobile.ilike.%${query.trim()}%,email.ilike.%${query.trim()}%,product_name.ilike.%${query.trim()}%`);
   const { data, error } = await request;
   if (error) throw new Error("Could not load enquiries.");
+  return (data || []).map((row) => toEnquiryRecord(row as Record<string, unknown>));
+}
+
+/** Returns the complete enquiry history for one approved customer. */
+export async function listAdminEnquiriesForCustomer(customerId: string): Promise<EnquiryRecord[]> {
+  const mode = integrationMode(serverEnv.supabaseServiceConfigured);
+  if (mode === "mock") return developmentStore().enquiries.filter((item) => item.customerId === customerId);
+  if (mode === "unconfigured") throw new Error("Enquiry storage is not configured.");
+  const client = getSupabaseServiceClient();
+  if (!client) throw new Error("Supabase service client is unavailable.");
+  const { data, error } = await client.from("enquiries").select("*").eq("customer_id", customerId).order("created_at", { ascending: false }).limit(500);
+  if (error) throw new Error("Could not load the customer's enquiries.");
   return (data || []).map((row) => toEnquiryRecord(row as Record<string, unknown>));
 }
 

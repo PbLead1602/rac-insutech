@@ -2,7 +2,7 @@
 
 import type { AdminProfile, UserRole } from "@/lib/db/types";
 import { env } from "@/lib/env";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getAdminSupabaseBrowserClient } from "@/lib/supabase/client";
 import { previewEntries, type AdminMutationPreview } from "@/components/admin-change-confirmation-guard";
 
 const mockSessionKey = "rac-dev-admin-session";
@@ -24,7 +24,7 @@ function readMockSession(): AdminSession | null {
 }
 
 export async function getAdminSession(): Promise<AdminSession | null> {
-  const client = getSupabaseBrowserClient();
+  const client = getAdminSupabaseBrowserClient();
   if (!client) return readMockSession();
 
   const { data: { user } } = await client.auth.getUser();
@@ -50,7 +50,7 @@ export async function getAdminSession(): Promise<AdminSession | null> {
 export async function signInAdmin(email: string, password: string): Promise<AdminSession> {
   const normalizedEmail = email.trim().toLowerCase();
   if (!normalizedEmail || !password) throw new Error("Enter your email and password.");
-  const client = getSupabaseBrowserClient();
+  const client = getAdminSupabaseBrowserClient();
 
   if (!client) {
     if (!env.devMocksEnabled) throw new Error("Supabase authentication has not been configured.");
@@ -73,7 +73,7 @@ export async function signInAdmin(email: string, password: string): Promise<Admi
 }
 
 export async function signOutAdmin() {
-  const client = getSupabaseBrowserClient();
+  const client = getAdminSupabaseBrowserClient();
   if (client) await client.auth.signOut();
   if (typeof window !== "undefined") window.sessionStorage.removeItem(mockSessionKey);
 }
@@ -91,7 +91,7 @@ export async function adminFetch(input: RequestInfo | URL, init: RequestInit = {
     const approved = await (window.__racConfirmAdminMutation?.({ method: method as AdminMutationPreview["method"], url, values }) ?? Promise.resolve(window.confirm(method === "DELETE" ? "Are you sure you want to permanently delete this record?" : "Review and confirm this change?")));
     if (!approved) return new Response(JSON.stringify({ ok: false, message: "Change cancelled. No data was modified." }), { status: 409, headers: { "Content-Type": "application/json" } });
   }
-  const client = getSupabaseBrowserClient();
+  const client = getAdminSupabaseBrowserClient();
   const headers = new Headers(init.headers);
   if (client) {
     const { data: { session } } = await client.auth.getSession();

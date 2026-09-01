@@ -2,7 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowRight, CalendarClock, ClipboardList, FileText, MapPin, MessageSquarePlus, Phone, Search, X } from "lucide-react";
+import { ArrowRight, CalendarClock, ClipboardList, FileText, MapPin, MessageSquarePlus, Phone, RefreshCw, Search, X } from "lucide-react";
 import { adminFetch } from "@/lib/auth/admin-client";
 import type { EnquiryNote, EnquiryRecord, EnquiryStatus } from "@/lib/db/types";
 
@@ -10,8 +10,11 @@ const statuses: Array<{ value: EnquiryStatus; label: string }> = [
   { value: "new", label: "New" }, { value: "contacted", label: "Contacted" }, { value: "requirement_received", label: "Requirement received" }, { value: "quotation_required", label: "Quotation required" }, { value: "quotation_sent", label: "Quotation sent" }, { value: "follow_up", label: "Follow-up" }, { value: "converted", label: "Converted" }, { value: "not_relevant", label: "Not relevant" }, { value: "closed", label: "Closed" }, { value: "lost", label: "Lost" },
 ];
 type EnquiryDetail = { enquiry: EnquiryRecord; notes: EnquiryNote[] };
+type EnquiryAudience = "all" | "visitor" | "registered" | "customer";
 const statusLabel = (status: string) => statuses.find((item) => item.value === status)?.label || status.replaceAll("_", " ");
 const localDateTime = (value?: string) => value ? new Date(value).toISOString().slice(0, 16) : "";
+function audienceFor(record: EnquiryRecord): Exclude<EnquiryAudience, "all"> { return record.customerId ? "customer" : record.accountId ? "registered" : "visitor"; }
+function audienceLabel(record: EnquiryRecord) { const audience = audienceFor(record); return audience === "customer" ? "Customer enquiry" : audience === "registered" ? "Registered user" : "Visitor enquiry"; }
 
 export default function AdminEnquiriesPanel({ onCreateQuotation }: { onCreateQuotation: (enquiryId: string) => void }) {
   const pathname = usePathname();
@@ -19,26 +22,39 @@ export default function AdminEnquiriesPanel({ onCreateQuotation }: { onCreateQuo
   const [records, setRecords] = useState<EnquiryRecord[]>([]);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
+  const [audience, setAudience] = useState<EnquiryAudience>("all");
   const [selected, setSelected] = useState<EnquiryDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [compose, setCompose] = useState(() => pathname.endsWith("/new"));
 
-  const load = useCallback(async () => {
-    const response = await adminFetch("/api/admin/enquiries");
-    const data = await response.json() as { enquiries?: EnquiryRecord[]; message?: string };
-    setRecords(data.enquiries || []);
-    if (!response.ok) setMessage(data.message || "Could not load enquiries.");
-    setLoading(false);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const response = await adminFetch("/api/admin/enquiries", { cache: "no-store" });
+      const data = await response.json() as { enquiries?: EnquiryRecord[]; message?: string };
+      if (!response.ok) throw new Error(data.message || "Could not load enquiries.");
+      setRecords(data.enquiries || []);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Could not load enquiries.");
+    } finally {
+      if (!silent) setLoading(false);
+    }
   }, []);
   useEffect(() => { const timer = window.setTimeout(() => { void load(); }, 0); return () => window.clearTimeout(timer); }, [load]);
+  useEffect(() => {
+    const refreshWhenVisible = () => { if (document.visibilityState === "visible") void load(true); };
+    const timer = window.setInterval(refreshWhenVisible, 20_000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => { window.clearInterval(timer); document.removeEventListener("visibilitychange", refreshWhenVisible); };
+  }, [load]);
   useEffect(() => {
     if (!pathname.endsWith("/new")) return;
     const timer = window.setTimeout(() => setCompose(true), 0);
     return () => window.clearTimeout(timer);
   }, [pathname]);
   const closeCompose = () => { setCompose(false); if (pathname.endsWith("/new")) router.replace("/admin/enquiries"); };
-  const filtered = useMemo(() => records.filter((record) => (status === "all" || record.status === status) && [record.name, record.company, record.mobile, record.email, record.product, record.application, record.city].join(" ").toLowerCase().includes(query.toLowerCase())), [records, query, status]);
+  const filtered = useMemo(() => records.filter((record) => (status === "all" || record.status === status) && (audience === "all" || audienceFor(record) === audience) && [record.name, record.company, record.mobile, record.email, record.product, record.application, record.city].join(" ").toLowerCase().includes(query.toLowerCase())), [records, query, status, audience]);
 
   const open = async (id: string) => {
     const response = await adminFetch(`/api/admin/enquiries/${id}`);
@@ -72,9 +88,10 @@ export default function AdminEnquiriesPanel({ onCreateQuotation }: { onCreateQuo
   };
 
   return <div className="admin-records">
-    <section className="admin-records-toolbar"><div className="admin-records-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, company, phone, email or product" /></div><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">All statuses</option>{statuses.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><button type="button" className="admin-os-primary" onClick={() => setCompose(true)}><MessageSquarePlus size={15} />Add enquiry</button><button type="button" onClick={() => { setLoading(true); void load(); }}>Refresh</button></section>
+    <section className="admin-enquiry-audience-tabs" aria-label="Enquiry ownership filters">{([{ id: "all", label: "All enquiries" }, { id: "visitor", label: "Visitor enquiries" }, { id: "registered", label: "Registered users" }, { id: "customer", label: "Customer enquiries" }] as Array<{ id: EnquiryAudience; label: string }>).map((item) => <button type="button" key={item.id} className={audience === item.id ? "active" : ""} onClick={() => setAudience(item.id)}>{item.label}<span>{item.id === "all" ? records.length : records.filter((record) => audienceFor(record) === item.id).length}</span></button>)}</section>
+    <section className="admin-records-toolbar"><div className="admin-records-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search name, company, phone, email or product" /></div><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">All statuses</option>{statuses.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><button type="button" className="admin-os-primary" onClick={() => setCompose(true)}><MessageSquarePlus size={15} />Add enquiry</button><button type="button" onClick={() => void load()}><RefreshCw size={14} />Refresh</button></section>
     {message && <p className="admin-records-message" role="status">{message}</p>}
-    <div className="admin-records-table-wrap"><div className="admin-records-table admin-enquiries-table"><div className="admin-records-heading"><span>Date</span><span>Customer</span><span>Contact</span><span>Product / application</span><span>Location</span><span>Status</span><span>Follow-up</span><span /></div>{loading ? <div className="admin-records-empty">Loading enquiries...</div> : filtered.length ? filtered.map((record) => <button type="button" className="admin-records-row" key={record.id} onClick={() => void open(record.id)}><span>{new Date(record.createdAt).toLocaleDateString("en-IN")}</span><span><strong>{record.name}</strong><small>{record.company || "Company not provided"}</small></span><span><strong>{record.mobile}</strong><small>{record.email || "No email"}</small></span><span><strong>{record.product || "General enquiry"}</strong><small>{record.application || "Application to be confirmed"}</small></span><span>{record.city || record.projectLocation || "Not provided"}</span><span><em className={`admin-status ${record.status}`}>{statusLabel(record.status)}</em></span><span>{record.followUpAt ? new Date(record.followUpAt).toLocaleDateString("en-IN") : "-"}</span><ArrowRight size={16} /></button>) : <div className="admin-records-empty"><ClipboardList size={25} /><strong>No matching enquiries</strong><p>New website requirements will appear here.</p></div>}</div></div>
+    <div className="admin-records-table-wrap"><div className="admin-records-table admin-enquiries-table"><div className="admin-records-heading"><span>Date</span><span>Customer</span><span>Contact</span><span>Product / application</span><span>Ownership</span><span>Location</span><span>Status</span><span>Follow-up</span><span /></div>{loading ? <div className="admin-records-empty">Loading enquiries...</div> : filtered.length ? filtered.map((record) => <button type="button" className="admin-records-row" key={record.id} onClick={() => void open(record.id)}><span>{new Date(record.createdAt).toLocaleDateString("en-IN")}</span><span><strong>{record.name}</strong><small>{record.company || "Company not provided"}</small></span><span><strong>{record.mobile}</strong><small>{record.email || "No email"}</small></span><span><strong>{record.product || "General enquiry"}</strong><small>{record.application || "Application to be confirmed"}</small></span><span><em className={`admin-enquiry-audience ${audienceFor(record)}`}>{audienceLabel(record)}</em></span><span>{record.city || record.projectLocation || "Not provided"}</span><span><em className={`admin-status ${record.status}`}>{statusLabel(record.status)}</em></span><span>{record.followUpAt ? new Date(record.followUpAt).toLocaleDateString("en-IN") : "-"}</span><ArrowRight size={16} /></button>) : <div className="admin-records-empty"><ClipboardList size={25} /><strong>No matching enquiries</strong><p>New website requirements will appear here.</p></div>}</div></div>
     {compose && <EnquiryForm onClose={closeCompose} onSubmit={create} />}
     {selected && <EnquiryDrawer detail={selected} onClose={() => setSelected(null)} onUpdate={applyUpdate} onAddNote={addNote} onCreateQuotation={onCreateQuotation} />}
   </div>;

@@ -42,6 +42,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { getProduct } from "@/lib/catalogue";
 import { whatsappContactHref } from "@/lib/contact";
 import { saveQuoteLeadDraft } from "@/lib/quotation-draft";
+import { customerFetch } from "@/lib/auth/customer-client";
 
 const heroSlides = [
   "/assets/hero/hero1.png",
@@ -202,6 +203,7 @@ export default function Home() {
           <Link className="header-contact" href="/account"><UserRound size={16} /> My account</Link>
           <a className="header-contact" href={whatsappContactHref("an insulation requirement")} target="_blank" rel="noreferrer"><MessageCircle size={16} /> Contact us</a>
           <button className="button button-gradient header-quote" onClick={() => setQuoteOpen(true)}>Request a Quote <ArrowRight size={17} /></button>
+          <Link className="mobile-account-shortcut" href="/account" aria-label="Open My account"><UserRound size={19} /></Link>
           <button className="menu-toggle" onClick={() => setIsMenuOpen(true)} aria-label="Open menu"><Menu size={21} /></button>
         </div>
       </header>
@@ -394,7 +396,7 @@ const footerDestinations: Record<string, string> = {
 function FooterColumn({ title, links }: { title: string; links: string[] }) { return <div className="footer-column"><h3>{title}</h3>{links.map((link) => link === "Contact us" ? <a href={whatsappContactHref("an insulation requirement")} target="_blank" rel="noreferrer" key={link}>Contact us</a> : <Link href={footerDestinations[link] || "/"} key={link}>{link}</Link>)}</div>; }
 
 function MobileMenu({ onClose, onQuote }: { onClose: () => void; onQuote: () => void }) {
-  const links = [{ label: "Home", href: "/" }, ...navItems.map((item) => ({ label: item.name, href: item.href })), { label: "About Us", href: "/about" }];
+  const links = [{ label: "Home", href: "/" }, ...navItems.map((item) => ({ label: item.name, href: item.href })), { label: "About Us", href: "/about" }, { label: "My account", href: "/account" }];
   return <motion.div className="mobile-menu" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
     <motion.div className="mobile-panel" initial={{ x: "100%" }} animate={{ x: 0 }} exit={{ x: "100%" }} transition={{ type: "tween", ease: [0.22, 1, 0.36, 1] }}>
       <div className="mobile-menu-head"><img src="/assets/logo/rac-logo.png" alt="RAC Insutech" /><button onClick={onClose} aria-label="Close menu"><X /></button></div>
@@ -421,7 +423,10 @@ function QuoteModal({ initialProduct, onClose }: { initialProduct: string; onClo
     setBusy(true);
     setError("");
     try {
-      const response = await fetch("/api/rfq", { method: "POST", body: values });
+      // Uses a customer token only when one exists. Visitors can still submit
+      // without an account; signed-in customers get the enquiry linked to
+      // their existing customer record automatically.
+      const response = await customerFetch("/api/rfq", { method: "POST", body: values });
       const result = await response.json() as { ok?: boolean; id?: string; enquiryNumber?: string; continuationToken?: string; message?: string };
       if (!response.ok || !result.ok || !result.id || !result.continuationToken) throw new Error(result.message || "We could not save your enquiry.");
       saveQuoteLeadDraft({

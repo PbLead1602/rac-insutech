@@ -3,6 +3,7 @@ import { createEnquiry } from "@/lib/repositories/enquiries";
 import { createEnquiryContinuation } from "@/lib/repositories/customer-accounts";
 import { sendRfqNotifications } from "@/lib/services/brevo";
 import { rfqSchema } from "@/lib/validation/rfq";
+import { getCustomerRequestContext } from "@/lib/auth/customer-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,7 +54,17 @@ export async function POST(request: Request) {
       };
     }
 
-    const { enquiry, mode: storageMode, created } = await createEnquiry(payload.data, attachment);
+    // Enquiry capture remains open to every visitor. When an approved customer
+    // is already signed in, securely attach the enquiry to that account so
+    // Admin can see it in that customer's complete history.
+    const customerContext = await getCustomerRequestContext(request);
+    const links = customerContext
+      ? {
+          accountId: customerContext.account.id,
+          customerId: customerContext.customer?.id,
+        }
+      : undefined;
+    const { enquiry, mode: storageMode, created } = await createEnquiry(payload.data, attachment, links);
     let continuation: Awaited<ReturnType<typeof createEnquiryContinuation>>;
     try {
       continuation = await createEnquiryContinuation(enquiry.id);

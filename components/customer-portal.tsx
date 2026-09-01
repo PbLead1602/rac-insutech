@@ -8,7 +8,7 @@ import { CatalogueHeader } from "@/components/catalogue-header";
 import { customerFetch, getCustomerSession, requestCustomerPasswordReset, signInCustomer, signOutCustomer, signUpCustomer, updateCustomerPassword } from "@/lib/auth/customer-client";
 import { whatsappContactHref } from "@/lib/contact";
 import { readQuoteLeadDraft } from "@/lib/quotation-draft";
-import { getSupabaseBrowserClient } from "@/lib/supabase/client";
+import { getCustomerSupabaseBrowserClient } from "@/lib/supabase/client";
 import { previewEntries } from "@/components/admin-change-confirmation-guard";
 import type { CustomerAccount, CustomerRecord, CustomerRevisionRequest, DocumentRecord, EnquiryRecord, ProjectRecord, QuotationRecord } from "@/lib/db/types";
 
@@ -88,9 +88,9 @@ export function CustomerForgotPasswordPage() {
 
 export function CustomerResetPasswordPage() {
   const params = useSearchParams(); const intent = params.get("intent") || "";
-  const [checking, setChecking] = useState(() => Boolean(getSupabaseBrowserClient())); const [ready, setReady] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [complete, setComplete] = useState(false);
+  const [checking, setChecking] = useState(() => Boolean(getCustomerSupabaseBrowserClient())); const [ready, setReady] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState(""); const [complete, setComplete] = useState(false);
   useEffect(() => {
-    const client = getSupabaseBrowserClient();
+    const client = getCustomerSupabaseBrowserClient();
     if (!client) return;
     let alive = true;
     const sync = async () => { const { data: { session } } = await client.auth.getSession(); if (alive) { setReady(Boolean(session?.user)); setChecking(false); } };

@@ -8,7 +8,7 @@ import { getServerPricedVariant } from "@/lib/quotations/pricing";
 import { quotationSubmissionSchema } from "@/lib/validation/quotation";
 import { finaliseQuotationSalesLinks, resolveSalesLinks } from "@/lib/repositories/sales-workflow";
 import { customerAccessFailure, getCustomerRequestContext } from "@/lib/auth/customer-server";
-import { portalDataForAccount } from "@/lib/repositories/customer-accounts";
+import { ensureEnquiryBelongsToCustomerAccount } from "@/lib/repositories/customer-accounts";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -28,10 +28,9 @@ export async function POST(request: Request) {
     const accessFailure = customerAccessFailure(customerContext);
     if (accessFailure) return NextResponse.json({ ok: false, message: accessFailure.message }, { status: accessFailure.status });
     if (!customerContext?.customer) return NextResponse.json({ ok: false, message: "Your customer profile is not ready yet. Please contact RAC." }, { status: 403 });
-    const portal = await portalDataForAccount(customerContext);
-    if (parsed.data.enquiryId && !portal.enquiries.some((enquiry) => enquiry.id === parsed.data.enquiryId)) {
-      return NextResponse.json({ ok: false, message: "This enquiry is not linked to your customer account." }, { status: 403 });
-    }
+    const sourceEnquiry = parsed.data.enquiryId
+      ? await ensureEnquiryBelongsToCustomerAccount(parsed.data.enquiryId, customerContext)
+      : undefined;
 
     const verification = await verifyTurnstile(
       parsed.data.turnstileToken,
@@ -61,7 +60,7 @@ export async function POST(request: Request) {
       gstin: customerContext.customer.gstin || customerContext.account.gstin || "",
       customerType: customerContext.account.customerType,
     };
-    const salesLinks = await resolveSalesLinks(customer, { enquiryId: parsed.data.enquiryId });
+    const salesLinks = await resolveSalesLinks(customer, { enquiryId: sourceEnquiry?.id });
     if (salesLinks.customerId !== customerContext.customer.id) {
       return NextResponse.json({ ok: false, message: "Your customer profile could not be matched safely. Please contact RAC." }, { status: 409 });
     }
