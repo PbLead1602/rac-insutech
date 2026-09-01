@@ -2,6 +2,8 @@ export type EnquiryStatus = "new" | "contacted" | "qualified" | "quoted" | "won"
 export type UserRole = "admin";
 
 export type RfqInput = {
+  /** Browser-generated idempotency key; never shown in operational records. */
+  submissionId?: string;
   name: string;
   company?: string;
   mobile: string;

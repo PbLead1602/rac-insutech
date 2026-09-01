@@ -16,7 +16,7 @@ function developmentStore(): DevelopmentStore {
 }
 
 export type AttachmentInput = { name: string; type: string; size: number; buffer?: Buffer };
-export type SaveEnquiryResult = { enquiry: EnquiryRecord; mode: IntegrationMode };
+export type SaveEnquiryResult = { enquiry: EnquiryRecord; mode: IntegrationMode; created: boolean };
 export type AdminEnquiryPatch = { status?: EnquiryStatus; followUpAt?: string; followUpNote?: string; internalNotes?: string; lostReason?: string; customerId?: string; projectId?: string; accountId?: string };
 
 function developmentEnquiryNumber() {
@@ -58,13 +58,31 @@ export async function createEnquiry(
   };
 
   if (mode === "mock") {
+    if (input.submissionId) {
+      const existing = developmentStore().enquiries.find((item) => item.submissionId === input.submissionId);
+      if (existing) return { enquiry: existing, mode, created: false };
+    }
     developmentStore().enquiries.unshift(enquiry);
-    return { enquiry, mode };
+    return { enquiry, mode, created: true };
   }
   if (mode === "unconfigured") throw new Error("Lead storage is not configured.");
 
   const client = getSupabaseServiceClient();
   if (!client) throw new Error("Supabase service client is unavailable.");
+  if (input.submissionId) {
+    const { data: existing, error: existingError } = await client
+      .from("enquiries")
+      .select("id, enquiry_number, created_at")
+      .eq("public_submission_id", input.submissionId)
+      .maybeSingle();
+    if (existingError) throw new Error("Could not check a previous quote request.");
+    if (existing) {
+      enquiry.id = String(existing.id);
+      enquiry.enquiryNumber = String(existing.enquiry_number || enquiry.enquiryNumber);
+      enquiry.createdAt = String(existing.created_at || enquiry.createdAt);
+      return { enquiry, mode, created: false };
+    }
+  }
   const { data: saved, error } = await client.from("enquiries").insert({
     id: enquiry.id,
     name: enquiry.name,
@@ -84,6 +102,7 @@ export async function createEnquiry(
     customer_type: enquiry.customerType || null,
     delivery_preference: enquiry.deliveryPreference || null,
     message: enquiry.message || null,
+    public_submission_id: input.submissionId || null,
     source: "website",
     status: "new",
   }).select("enquiry_number, created_at").single();
@@ -101,7 +120,7 @@ export async function createEnquiry(
     });
     if (attachmentError) throw new Error("Your request was saved, but the attachment could not be linked.");
   }
-  return { enquiry, mode };
+  return { enquiry, mode, created: true };
 }
 
 /** Safe local inspection point for development and integration tests only. */

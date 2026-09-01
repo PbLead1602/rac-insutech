@@ -59,11 +59,34 @@ export async function POST(request: Request) {
       };
     }
 
-    const { enquiry, mode: storageMode } = await createEnquiry(payload.data, attachment);
-    const [continuation, email] = await Promise.all([
-      createEnquiryContinuation(enquiry.id),
-      sendRfqNotifications(enquiry),
-    ]);
+    const { enquiry, mode: storageMode, created } = await createEnquiry(payload.data, attachment);
+    let continuation: Awaited<ReturnType<typeof createEnquiryContinuation>>;
+    try {
+      continuation = await createEnquiryContinuation(enquiry.id);
+    } catch (error) {
+      // The enquiry is already safely stored. Do not invite the visitor to
+      // submit it again and create a duplicate when only the next step failed.
+      console.error("RFQ continuation creation failed", {
+        enquiryId: enquiry.id,
+        message: error instanceof Error ? error.message : "Unknown continuation error",
+      });
+      return NextResponse.json(
+        {
+          ok: false,
+          saved: true,
+          id: enquiry.id,
+          enquiryNumber: enquiry.enquiryNumber,
+          message: "Your enquiry has been saved. We could not start quotation access right now; please sign in from My Account or contact RAC with this enquiry number.",
+        },
+        { status: 503 },
+      );
+    }
+
+    // Email is an operational notification, not a prerequisite for recording
+    // a lead or permitting the visitor to continue securely.
+    const email = created
+      ? await sendRfqNotifications(enquiry)
+      : { delivered: false, mode: storageMode };
 
     return NextResponse.json({
       ok: true,

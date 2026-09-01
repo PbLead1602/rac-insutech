@@ -3,6 +3,7 @@ import { z } from "zod";
 const optionalText = z.string().trim().max(2000).optional().default("");
 
 export const rfqSchema = z.object({
+  submissionId: z.union([z.literal(""), z.string().uuid()]).optional().default(""),
   name: z.string().trim().min(2, "Please enter your name.").max(120),
   company: z.string().trim().max(160).optional().default(""),
   mobile: z.string().trim().min(7, "Please enter a valid mobile number.").max(30),

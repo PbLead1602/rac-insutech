@@ -201,7 +201,7 @@ function GenerateQuotationWorkspace() {
     const ids = [...new Set(variantIds)];
     if (!ids.length) return;
     try {
-      const response = await fetch("/api/quotation-rates", {
+      const response = await customerFetch("/api/quotation-rates", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         cache: "no-store",

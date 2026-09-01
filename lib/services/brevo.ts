@@ -17,12 +17,27 @@ function enquiryEmail(enquiry: EnquiryRecord) {
   return `<h2>New RAC Insutech RFQ</h2><p>A website enquiry needs review.</p><table>${values.map(([label, value]) => `<tr><td style="padding:6px 14px 6px 0;color:#64748b">${label}</td><td style="padding:6px 0"><strong>${escaped(value)}</strong></td></tr>`).join("")}</table><p><strong>Requirement:</strong><br>${escaped(enquiry.message)}</p>`;
 }
 
-async function sendBrevoEmail(payload: Record<string, unknown>) {
-  return fetch("https://api.brevo.com/v3/smtp/email", {
-    method: "POST",
-    headers: { "api-key": serverEnv.BREVO_API_KEY, "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
+async function sendBrevoEmail(payload: Record<string, unknown>): Promise<{ ok: boolean }> {
+  try {
+    const response = await fetch("https://api.brevo.com/v3/smtp/email", {
+      method: "POST",
+      headers: { "api-key": serverEnv.BREVO_API_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      // Never log the request body: it contains customer details. The status is
+      // sufficient for production diagnosis and cannot expose credentials.
+      console.error("Brevo transactional email was rejected", { status: response.status });
+    }
+    return { ok: response.ok };
+  } catch (error) {
+    // An email provider outage or network interruption must never roll back or
+    // falsely report failure for an enquiry, approval, or issued quotation.
+    console.error("Brevo transactional email request failed", {
+      message: error instanceof Error ? error.message : "Unknown request error",
+    });
+    return { ok: false };
+  }
 }
 
 export async function sendRfqNotifications(enquiry: EnquiryRecord): Promise<EmailDispatchResult> {

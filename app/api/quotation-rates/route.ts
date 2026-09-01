@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getQuotationVariant } from "@/lib/quotations/catalogue";
 import { getActiveRateCardsForVariants } from "@/lib/repositories/rates";
+import { customerAccessFailure, getCustomerRequestContext } from "@/lib/auth/customer-server";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,9 @@ const rateLookupSchema = z.object({
  * the customer submits the quotation.
  */
 export async function POST(request: Request) {
+  const customerContext = await getCustomerRequestContext(request);
+  const accessFailure = customerAccessFailure(customerContext);
+  if (accessFailure) return NextResponse.json({ ok: false, message: accessFailure.message }, { status: accessFailure.status });
   const parsed = rateLookupSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ ok: false, message: "Choose at least one valid product configuration." }, { status: 400 });
 
