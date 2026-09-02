@@ -1,29 +1,54 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import Link from "next/link";
-import { ArrowRight, ArrowUpRight, BookOpen, Globe2, Mail, MapPin, Menu, MessageCircle, Phone, Search, UserRound, X } from "lucide-react";
+import { ArrowRight, ArrowUpRight, BookOpen, CircleHelp, Globe2, Mail, MapPin, Menu, MessageCircle, Phone, Search, UserRound, X } from "lucide-react";
 import { whatsappContactHref } from "@/lib/contact";
 
 export function CatalogueHeader() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const links = [
     { label: "Home", href: "/" },
     { label: "Products", href: "/products" },
     { label: "Solutions", href: "/solutions" },
     { label: "Industries", href: "/industries" },
     { label: "Services", href: "/services" },
-    { label: "Brochures", href: "/brochures" },
+    { label: "Resources", href: "/brochures" },
     { label: "About Us", href: "/about" },
   ];
-  return <header className="catalogue-header">
+
+  const closeMenu = () => setMenuOpen(false);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    const menuButton = menuButtonRef.current;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setMenuOpen(false);
+    };
+
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", closeOnEscape);
+      menuButton?.focus();
+    };
+  }, [menuOpen]);
+
+  const mobileNavigation = menuOpen && typeof document !== "undefined" ? createPortal(<><button type="button" className="catalogue-mobile-nav-scrim" onClick={closeMenu} aria-label="Close mobile navigation" /><nav id="rac-mobile-navigation" className="catalogue-mobile-nav" aria-label="Mobile catalogue navigation"><div className="catalogue-mobile-nav-head"><Link href="/" onClick={closeMenu} aria-label="RAC Insutech home"><img src="/assets/logo/rac-logo.png" alt="RAC Insutech" /></Link><button type="button" onClick={closeMenu} aria-label="Close menu"><X size={22} /></button></div><div className="catalogue-mobile-nav-links">{links.map((link) => <Link href={link.href} key={link.href} onClick={closeMenu}>{link.label}<ArrowUpRight size={17} /></Link>)}<Link href="/account" onClick={closeMenu}>My account <ArrowUpRight size={17} /></Link></div><div className="catalogue-mobile-nav-actions"><Link href="/?quote=1" onClick={closeMenu}>Request a quote <ArrowRight size={18} /></Link><a href={whatsappContactHref("an insulation requirement")} target="_blank" rel="noreferrer" onClick={closeMenu}><MessageCircle size={17} /> Contact us on WhatsApp</a><p><CircleHelp size={16} /> Need assistance? <a href={whatsappContactHref("an insulation requirement")} target="_blank" rel="noreferrer" onClick={closeMenu}>Contact RAC</a></p></div></nav></>, document.body) : null;
+
+  return <><header className="catalogue-header">
     <div className="catalogue-shell catalogue-header-inner">
       <Link href="/" className="catalogue-logo" aria-label="RAC Insutech home"><img src="/assets/logo/rac-logo.png" alt="RAC Insutech" /></Link>
       <nav aria-label="Public catalogue navigation">{links.map((link) => <Link href={link.href} key={link.href}>{link.label}</Link>)}</nav>
-      <div className="catalogue-header-actions"><Link href="/products" className="catalogue-search"><Search size={17} /><span>Search products</span></Link><Link href="/account" className="catalogue-contact-action"><UserRound size={15} /> My account</Link><a href={whatsappContactHref("an insulation requirement")} target="_blank" rel="noreferrer" className="catalogue-contact-action"><MessageCircle size={15} /> Contact us</a><Link href="/?quote=1" className="catalogue-quote">Request a quote <ArrowRight size={16} /></Link><Link href="/account" className="catalogue-mobile-account" aria-label="Open My account"><UserRound size={18} /></Link><button type="button" className="catalogue-menu" onClick={() => setMenuOpen((open) => !open)} aria-label={menuOpen ? "Close menu" : "Open menu"} aria-controls="rac-mobile-navigation" aria-expanded={menuOpen}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button></div>
+      <div className="catalogue-header-actions"><Link href="/products" className="catalogue-search"><Search size={17} /><span>Search products</span></Link><Link href="/account" className="catalogue-contact-action"><UserRound size={15} /> My account</Link><a href={whatsappContactHref("an insulation requirement")} target="_blank" rel="noreferrer" className="catalogue-contact-action"><MessageCircle size={15} /> Contact us</a><Link href="/?quote=1" className="catalogue-quote">Request a quote <ArrowRight size={16} /></Link><Link href="/account" className="catalogue-mobile-account" aria-label="Open My account"><UserRound size={18} /></Link><button ref={menuButtonRef} type="button" className="catalogue-menu" onClick={() => setMenuOpen((open) => !open)} aria-label={menuOpen ? "Close menu" : "Open menu"} aria-controls="rac-mobile-navigation" aria-expanded={menuOpen}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button></div>
     </div>
-    {menuOpen && <nav id="rac-mobile-navigation" className="catalogue-mobile-nav" aria-label="Mobile catalogue navigation"><Link href="/account" onClick={() => setMenuOpen(false)}>My account <UserRound size={16} /></Link>{links.map((link) => <Link href={link.href} key={link.href} onClick={() => setMenuOpen(false)}>{link.label}<ArrowUpRight size={16} /></Link>)}<a href={whatsappContactHref("an insulation requirement")} target="_blank" rel="noreferrer" onClick={() => setMenuOpen(false)}>Contact us on WhatsApp <MessageCircle size={16} /></a><Link href="/?quote=1" onClick={() => setMenuOpen(false)}>Request a quote <ArrowRight size={16} /></Link></nav>}
-  </header>;
+  </header>{mobileNavigation}</>;
 }
 
 export function CatalogueFooter() {
