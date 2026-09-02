@@ -59,14 +59,18 @@ export function BuiltUpNbrConfigurator({
 }) {
   const [draft, setDraft] = useState<CustomBuiltUpNbrDraft>(() => draftForClass());
   const [message, setMessage] = useState("");
-  const variants = useMemo(() => variantsForClass(draft.materialClass), [draft.materialClass]);
+  const [previousEditingItem, setPreviousEditingItem] = useState<CustomBuiltUpNbrDraft | null | undefined>(editingItem);
 
-  useEffect(() => {
-    if (!editingItem) return;
+  // An edit request supplies a complete snapshot. Apply it while rendering so
+  // the form is ready before paint, rather than scheduling a second render from
+  // an Effect. The parent keeps the snapshot until this edit is saved.
+  if (editingItem && editingItem !== previousEditingItem) {
+    setPreviousEditingItem(editingItem);
     setDraft(editingItem);
     setMessage("Editing the selected Custom Built-Up NBR item. Layer areas recalculate as you change it.");
-    onEditConsumed?.();
-  }, [editingItem, onEditConsumed]);
+  }
+
+  const variants = useMemo(() => variantsForClass(draft.materialClass), [draft.materialClass]);
 
   useEffect(() => {
     onPreviewVariantIdsChange?.(draft.layers.map((layer) => layer.variantId).filter(Boolean));
@@ -121,6 +125,7 @@ export function BuiltUpNbrConfigurator({
     onAdd(draft);
     setMessage("Custom Built-Up NBR item added. The server will recalculate every layer before issuing the quotation.");
     setDraft(draftForClass(draft.materialClass));
+    onEditConsumed?.();
   };
 
   return <section className="built-up-nbr" aria-labelledby="built-up-nbr-title">
