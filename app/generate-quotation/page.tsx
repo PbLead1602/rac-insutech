@@ -64,8 +64,9 @@ function isCartonTubeProduct(productId: QuoteProductId) {
   return productId === "nitrile-rubber-tube" || productId === "nitrile-rubber-tube-class-1";
 }
 
-function isNitrileRubberProduct(productId: QuoteProductId) {
-  return productId === "nitrile-rubber-tube" || productId === "nitrile-rubber-sheet";
+/** Custom build-up applies to the Class O Nitrile Tube product only. */
+function isClassONitrileTube(productId: QuoteProductId) {
+  return productId === "nitrile-rubber-tube";
 }
 
 function orderUnitForProduct(productId: QuoteProductId): QuoteOrderUnit {
@@ -379,7 +380,7 @@ function GenerateQuotationWorkspace() {
         return [{ ...row, configuration: { materialClass: batchSelection.materialClass, thickness, size, lamination } }];
       });
     });
-    if (!rows.length) return setMessage("For Nitrile Rubber Tube, select at least one pipe or roll size that matches the selected thickness.");
+    if (!rows.length) return setMessage("Select at least one matching pipe or roll size for the selected thickness.");
     updateRows((current) => [...current, ...rows]);
     setMessage(`${rows.length} configuration line${rows.length === 1 ? " was" : "s were"} added.`);
   };
@@ -436,12 +437,12 @@ function GenerateQuotationWorkspace() {
         <section className="quotation-config-card">
           <div className="quotation-card-heading"><div><p className="catalogue-kicker"><span /> PRODUCT CONFIGURATION</p><h2>Configure each quotation line.</h2></div><span className="provisional-label">Rate-card data</span></div>
           <p className="quotation-config-intro">Sheets are ordered in rolls, open-cell sheets in box packing, Nitrile tubes in cartons, XLPE tubes in running metres, tape by roll and adhesive by drum. Each line uses its approved rate basis.</p>
-          {isNitrileRubberProduct(batchSelection.productId) && <fieldset className="nitrile-insulation-type" aria-label="Nitrile Rubber insulation type"><legend>Insulation type</legend><label><input type="radio" name="nitrile-mode" checked={nitrileMode === "standard"} onChange={() => setNitrileMode("standard")} /> Standard Tube</label><label><input type="radio" name="nitrile-mode" checked={nitrileMode === "custom"} onChange={() => setNitrileMode("custom")} /> Custom Diameter / Built-Up</label><p>Custom Diameter / Built-Up uses active Nitrile Rubber Sheet Rate Cards layer by layer; it never creates a fabricated tube SKU.</p></fieldset>}
-          {isNitrileRubberProduct(batchSelection.productId) && nitrileMode === "custom" && <BuiltUpNbrConfigurator rates={approvedRates} rateErrors={rateErrors} wastagePercent={builtUpNbrWastagePercent} editingItem={editingBuiltUpItem} onEditConsumed={() => setEditingBuiltUpItem(null)} onPreviewVariantIdsChange={setCustomPreviewVariantIds} onAdd={(item) => setCustomBuiltUpItems((current) => {
+          {isClassONitrileTube(batchSelection.productId) && <fieldset className="nitrile-insulation-type" aria-label="Nitrile Rubber insulation type"><legend>Insulation type</legend><label><input type="radio" name="nitrile-mode" checked={nitrileMode === "standard"} onChange={() => setNitrileMode("standard")} /> Standard Tube</label><label><input type="radio" name="nitrile-mode" checked={nitrileMode === "custom"} onChange={() => setNitrileMode("custom")} /> Custom Diameter / Built-Up</label><p>Custom Diameter / Built-Up uses active Nitrile Rubber Sheet Rate Cards layer by layer; it never creates a fabricated tube SKU.</p></fieldset>}
+          {isClassONitrileTube(batchSelection.productId) && nitrileMode === "custom" && <BuiltUpNbrConfigurator rates={approvedRates} rateErrors={rateErrors} wastagePercent={builtUpNbrWastagePercent} editingItem={editingBuiltUpItem} onEditConsumed={() => setEditingBuiltUpItem(null)} onPreviewVariantIdsChange={setCustomPreviewVariantIds} onAdd={(item) => setCustomBuiltUpItems((current) => {
             const existing = current.some((entry) => entry.id === item.id);
             return existing ? current.map((entry) => entry.id === item.id ? item : entry) : [...current, item];
           })} />}
-          <section className="quotation-batch-builder" hidden={isNitrileRubberProduct(batchSelection.productId) && nitrileMode === "custom"} aria-labelledby="multiple-configurations-heading">
+          <section className="quotation-batch-builder" hidden={isClassONitrileTube(batchSelection.productId) && nitrileMode === "custom"} aria-labelledby="multiple-configurations-heading">
             <div className="quotation-batch-heading"><div><span>Multiple selection</span><h3 id="multiple-configurations-heading">Add several configurations at once</h3></div><p>Each selected option becomes its own editable quotation line with the correct rate and subtotal.</p></div>
             <div className="quotation-batch-grid">
               <label>Product<select value={batchSelection.productId} onChange={(event) => { setBatchSelection(initialBatchSelection(event.target.value as QuoteProductId)); setNitrileMode("standard"); }}>{quotationProducts.map((product) => <option value={product.id} key={product.id}>{product.name}</option>)}</select></label>

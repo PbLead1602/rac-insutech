@@ -132,7 +132,7 @@ const tubeVariants = nitrileTubeClassORateCard.flatMap((row, index) => {
   ].map(([lamination, rate]) => ({
     id: `nitrile-tube-class-o-${index + 1}-${slug(String(lamination))}`,
     productId: "nitrile-rubber-tube" as const,
-    productName: "Nitrile Rubber Tube",
+    productName: "Nitrile Rubber Tube Class O",
     materialClass: "Class O",
     thickness: row.thickness,
     size,
@@ -251,7 +251,7 @@ export const quotationProducts: Array<{ id: QuoteProductId; name: string; descri
   { id: "xlpe-tube", name: "XLPE Tubes", description: "Running-metre rates, pipe sizes, tube dimensions and plain or aluminium-foil options from the supplied rate list." },
   { id: "nitrile-rubber-sheet", name: "Nitrile Rubber Sheet", description: "Rate-card dimensions and lamination options for flexible elastomeric sheet insulation." },
   { id: "open-cell-nitrile-rubber-sheet", name: "Open Cell Nitrile Rubber Sheet", description: "Plain Class 1, 180–200 kg/m³ density sheet insulation priced per square metre." },
-  { id: "nitrile-rubber-tube", name: "Nitrile Rubber Tube", description: "Class O tube sizes, carton lengths and lamination rates from the supplied rate card." },
+  { id: "nitrile-rubber-tube", name: "Nitrile Rubber Tube Class O", description: "Class O tube sizes, carton lengths and lamination rates from the supplied rate card." },
   { id: "nitrile-rubber-tube-class-1", name: "Nitrile Rubber Tube - Class 1", description: "Plain Class 1 tubes, supplied in cartons and priced per tube." },
   { id: "insulation-tape", name: "Insulation Tape", description: "Tape type, roll width and rate-per-unit options from the supplied rate list." },
   { id: "insulation-adhesive", name: "Insulation Adhesive", description: "Adhesive grades, drum sizes and rate-per-litre options from the supplied rate list." },
