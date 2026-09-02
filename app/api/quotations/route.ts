@@ -84,8 +84,7 @@ export async function POST(request: Request) {
       source: salesLinks.enquiryId ? "enquiry_converted" : "website_auto_quote",
     });
     const quotation = await finaliseQuotationSalesLinks(createdQuotation, salesLinks);
-    const quoteUrl = `${serverEnv.siteUrl.replace(/\/$/, "")}/quote/${quotation.accessToken}`;
-    const email = await sendQuotationNotifications(quotation, quoteUrl);
+    const email = await sendQuotationNotifications(quotation);
 
     return NextResponse.json({
       ok: true,

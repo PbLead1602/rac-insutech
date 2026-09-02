@@ -1,9 +1,15 @@
 import "server-only";
 
 import type { QuotationRecord } from "@/lib/db/types";
+import { serverEnv } from "@/lib/env/server";
 
 const safe = (value: string) => value.replace(/[()\\]/g, "\\$&").replace(/[^ -~]/g, "-");
 const money = (value: number) => `INR ${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+// This is the same binary logo supplied from `rac images/Logo`, preserved in
+// the application's public assets so it can be fetched by both Node and the
+// deployed Worker when a PDF is generated.
+const racLogoSrc = "/assets/logo/rac-logo.png";
+type PngImage = { width: number; height: number; idat: Buffer };
 
 const companyHeader = [
   "RAC INSUTECH",
@@ -61,18 +67,65 @@ function stream(value: string | Buffer) {
   return Buffer.concat([Buffer.from(`<< /Length ${data.length} >>\nstream\n`), data, Buffer.from("\nendstream")]);
 }
 
-function createPdf(contents: string[]) {
+function pngImage(bytes: Buffer): PngImage | null {
+  const signature = "89504e470d0a1a0a";
+  if (bytes.subarray(0, 8).toString("hex") !== signature) return null;
+  let cursor = 8;
+  let width = 0;
+  let height = 0;
+  let supported = false;
+  const compressed: Buffer[] = [];
+  while (cursor + 12 <= bytes.length) {
+    const length = bytes.readUInt32BE(cursor);
+    const type = bytes.subarray(cursor + 4, cursor + 8).toString("ascii");
+    const dataStart = cursor + 8;
+    const dataEnd = dataStart + length;
+    if (dataEnd + 4 > bytes.length) return null;
+    if (type === "IHDR" && length === 13) {
+      width = bytes.readUInt32BE(dataStart);
+      height = bytes.readUInt32BE(dataStart + 4);
+      // The RAC logo is an 8-bit, non-interlaced RGB PNG. Keeping this
+      // constraint explicit avoids producing a broken PDF for another asset.
+      supported = bytes[dataStart + 8] === 8 && bytes[dataStart + 9] === 2 && bytes[dataStart + 12] === 0;
+    } else if (type === "IDAT") compressed.push(bytes.subarray(dataStart, dataEnd));
+    else if (type === "IEND") break;
+    cursor = dataEnd + 4;
+  }
+  if (!supported || width <= 0 || height <= 0 || !compressed.length) return null;
+  return { width, height, idat: Buffer.concat(compressed) };
+}
+
+async function loadRacLogo(): Promise<PngImage | null> {
+  try {
+    const response = await fetch(new URL(racLogoSrc, serverEnv.siteUrl), { cache: "force-cache" });
+    if (!response.ok) return null;
+    return pngImage(Buffer.from(await response.arrayBuffer()));
+  } catch {
+    // A quotation remains valid if a static asset is temporarily unavailable.
+    return null;
+  }
+}
+
+function imageObject(image: PngImage) {
+  const dictionary = `<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /DecodeParms << /Predictor 15 /Colors 3 /BitsPerComponent 8 /Columns ${image.width} >> /Length ${image.idat.length} >>\nstream\n`;
+  return Buffer.concat([Buffer.from(dictionary), image.idat, Buffer.from("\nendstream")]);
+}
+
+function createPdf(contents: string[], logo?: PngImage | null) {
   const pageRefs = contents.map((_, index) => 3 + index * 2);
   const fontRef = 3 + contents.length * 2;
+  const logoRef = logo ? fontRef + 1 : undefined;
   const objects: Array<string | Buffer> = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     `<< /Type /Pages /Kids [${pageRefs.map((reference) => `${reference} 0 R`).join(" ")}] /Count ${contents.length} >>`,
   ];
   contents.forEach((content, index) => {
     const pageRef = pageRefs[index];
-    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontRef} 0 R >> >> /Contents ${pageRef + 1} 0 R >>`, stream(content));
+    const imageResource = logoRef ? ` /XObject << /RacLogo ${logoRef} 0 R >>` : "";
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontRef} 0 R >>${imageResource} >> /Contents ${pageRef + 1} 0 R >>`, stream(content));
   });
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
+  if (logo) objects.push(imageObject(logo));
   const chunks: Buffer[] = [Buffer.from("%PDF-1.5\n%RAC\n")];
   const offsets = [0];
   let length = chunks[0].length;
@@ -90,15 +143,18 @@ function createPdf(contents: string[]) {
   return Buffer.concat(chunks);
 }
 
-function drawQuotationPage(quotation: QuotationRecord, items: QuotationRecord["items"], itemOffset: number, pageNumber: number, pageCount: number, includeCustomer: boolean, isLastPage: boolean) {
+function drawQuotationPage(quotation: QuotationRecord, items: QuotationRecord["items"], itemOffset: number, pageNumber: number, pageCount: number, includeCustomer: boolean, isLastPage: boolean, hasLogo: boolean) {
   const command: string[] = [];
   command.push("q", "0.97 0.99 1 rg", "0 0 612 792 re", "f", "Q");
   text(command, ["RAC INSUTECH"], 470, 752, 8.4, "0.02 0.36 0.69 rg");
   text(command, ["COMMERCIAL QUOTATION"], 48, 748, 10, "0.02 0.36 0.69 rg", 13);
   text(command, [quotation.quoteNumber], 48, 718, 21, "0.04 0.16 0.34 rg");
   text(command, [`Issued ${new Date(quotation.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} | Valid for ${quotation.validityDays} days | Page ${pageNumber} of ${pageCount}`], 48, 699, 8.2, "0.29 0.4 0.53 rg");
-  text(command, [companyHeader[0]], 338, 698, 8.4, "0.02 0.36 0.69 rg");
-  text(command, companyHeader.slice(1), 338, 686, 6.65, "0.18 0.29 0.43 rg", 8.2);
+  if (hasLogo) command.push("q", "88 0 0 66 466 702 cm", "/RacLogo Do", "Q");
+  else {
+    text(command, [companyHeader[0]], 338, 698, 8.4, "0.02 0.36 0.69 rg");
+    text(command, companyHeader.slice(1), 338, 686, 6.65, "0.18 0.29 0.43 rg", 8.2);
+  }
   let y = includeCustomer ? 550 : 625;
   if (includeCustomer) {
     text(command, ["CUSTOMER & PROJECT"], 48, 672, 8.5, "0.02 0.43 0.73 rg");
@@ -149,7 +205,8 @@ function drawQuotationPage(quotation: QuotationRecord, items: QuotationRecord["i
   return command.join("\n");
 }
 
-export function createQuotationPdf(quotation: QuotationRecord) {
+export async function createQuotationPdf(quotation: QuotationRecord) {
+  const logo = await loadRacLogo();
   const firstPageItems = quotation.items.slice(0, 7);
   const remainingItems = quotation.items.slice(7);
   const followingPages: QuotationRecord["items"][] = [];
@@ -158,8 +215,8 @@ export function createQuotationPdf(quotation: QuotationRecord) {
   const pages = [firstPageItems, ...followingPages];
   let itemOffset = 0;
   return createPdf(pages.map((items, index) => {
-    const contents = drawQuotationPage(quotation, items, itemOffset, index + 1, pages.length, index === 0, index === pages.length - 1);
+    const contents = drawQuotationPage(quotation, items, itemOffset, index + 1, pages.length, index === 0, index === pages.length - 1, Boolean(logo));
     itemOffset += items.length;
     return contents;
-  }));
+  }), logo);
 }

@@ -3,6 +3,7 @@ import "server-only";
 import { integrationMode, type IntegrationMode } from "@/lib/env";
 import { serverEnv } from "@/lib/env/server";
 import type { CustomerAccount, EnquiryRecord, QuotationRecord } from "@/lib/db/types";
+import { createQuotationPdf } from "@/lib/quotations/pdf";
 
 export type EmailDispatchResult = { delivered: boolean; mode: IntegrationMode; error?: string };
 
@@ -85,39 +86,39 @@ export async function sendCustomerAccountApprovalNotification(account: CustomerA
   return response.ok ? { delivered: true, mode } : { delivered: false, mode, error: "Brevo rejected the account approval email." };
 }
 
-function money(amount: number) {
-  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(amount);
+function quotationEmail(quotation: QuotationRecord) {
+  const projectName = quotation.customer.projectName || "Project to be confirmed";
+  const projectLocation = quotation.customer.projectLocation || quotation.customer.city || "To be confirmed";
+  const quotationDate = new Date(quotation.createdAt).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" });
+  const detailRows = [
+    ["Project Name", projectName],
+    ["Quotation Number", quotation.quoteNumber],
+    ["Quotation Date", quotationDate],
+    ["Company Name", quotation.customer.company],
+    ["Project Location", projectLocation],
+  ].map(([label, value]) => `<tr><td style="padding:4px 16px 4px 0;color:#475569">${label}:</td><td style="padding:4px 0"><strong>${escaped(value)}</strong></td></tr>`).join("");
+  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#172b4d;line-height:1.6;font-size:15px"><p>Dear Sir/Madam,</p><p>Thank you very much for your valuable enquiry and for considering <strong>RAC Insutech</strong> for your insulation requirement.</p><p>With reference to your requirement for <strong>${escaped(projectName)}</strong>, please find attached our quotation <strong>${escaped(quotation.quoteNumber)}</strong> for your review.</p><p><strong>Quotation details:</strong></p><table style="border-collapse:collapse;margin:0 0 16px">${detailRows}</table><p>The attached PDF contains the selected product details, specifications, quantities, commercial value, applicable GST, and quotation terms.</p><p>Kindly review the quotation and feel free to contact us should you require any clarification, modification, additional quantity, alternative specification, or technical assistance.</p><p>We look forward to the opportunity to support your project and to establishing a long-term business association with your organisation.</p><p>Thank you.</p><p>Regards,<br><strong>RAC Insutech</strong></p><p><strong>Thermal &bull; Acoustic &bull; HVAC Insulation Solutions</strong></p><p>Email: <strong>racinsutech@gmail.com</strong><br>Phone: <strong>+91 91309 58594</strong><br>WhatsApp: <strong>+91 91309 58594</strong><br>Website: <a href="http://www.racinsutech.com">www.racinsutech.com</a><br>Address: <strong>Rukhmini Niwas, Near Vrundavan Garden Apartment, Behind Tulshan Bungalow, Geeta Nagar, Akola</strong></p></div>`;
 }
 
-function quotationEmail(quotation: QuotationRecord, quoteUrl: string) {
-  const rows = quotation.items.map((item) => `<tr><td style="padding:7px 12px 7px 0">${escaped(item.productName)}</td><td style="padding:7px 12px 7px 0">${escaped(item.configuration)}</td><td style="padding:7px 12px 7px 0">${escaped(item.technicalQuantity)}</td><td style="padding:7px 0;text-align:right"><strong>${money(item.amount)}</strong></td></tr>`).join("");
-  return `<h2>RAC Insutech quotation ${escaped(quotation.quoteNumber)}</h2><p>Prepared for <strong>${escaped(quotation.customer.company)}</strong>.</p><table style="border-collapse:collapse;width:100%"><thead><tr><th align="left">Product</th><th align="left">Configuration</th><th align="left">Supply quantity</th><th align="right">Amount</th></tr></thead><tbody>${rows}</tbody></table><p>Subtotal: <strong>${money(quotation.subtotal)}</strong><br>GST (${quotation.gstRate}%): <strong>${money(quotation.gstAmount)}</strong><br>Total: <strong>${money(quotation.total)}</strong><br>Transport: <strong>At Actual</strong></p><p>Rates are selection guidance from the configured rate card and must be reviewed by RAC before order acceptance.</p><p><a href="${quoteUrl}">View your quotation securely</a></p>`;
-}
-
-export async function sendQuotationNotifications(quotation: QuotationRecord, quoteUrl: string): Promise<EmailDispatchResult> {
-  const mode = integrationMode(serverEnv.brevoConfigured);
+export async function sendQuotationNotifications(quotation: QuotationRecord): Promise<EmailDispatchResult> {
+  // A quotation goes only to its customer. It must not depend on the RFQ
+  // sales-recipient setting, which is intentionally used only for enquiries.
+  const mode = integrationMode(Boolean(serverEnv.BREVO_API_KEY && serverEnv.BREVO_SENDER_EMAIL));
   if (mode === "mock") {
-    console.info(`[Quotation mock email] ${quotation.quoteNumber} would be sent to ${quotation.customer.email} and sales.`);
+    console.info(`[Quotation mock email] ${quotation.quoteNumber} would be sent to ${quotation.customer.email}.`);
     return { delivered: false, mode };
   }
   if (mode === "unconfigured") return { delivered: false, mode, error: "Brevo is not configured." };
 
   const sender = { email: serverEnv.BREVO_SENDER_EMAIL, name: serverEnv.BREVO_SENDER_NAME || "RAC Insutech" };
-  const message = quotationEmail(quotation, quoteUrl);
-  const salesResponse = await sendBrevoEmail({
-    sender,
-    to: [{ email: serverEnv.RFQ_RECIPIENT_EMAIL }],
-    subject: `Quotation ${quotation.quoteNumber} - ${quotation.customer.company}`,
-    htmlContent: message,
-  });
-  if (!salesResponse.ok) return { delivered: false, mode, error: "Brevo rejected the sales quotation notification." };
-
+  const pdf = await createQuotationPdf(quotation);
   const customerResponse = await sendBrevoEmail({
     sender,
     to: [{ email: quotation.customer.email, name: quotation.customer.fullName }],
-    subject: `Your RAC Insutech quotation ${quotation.quoteNumber}`,
-    htmlContent: message,
+    subject: `Quotation ${quotation.quoteNumber} - ${quotation.customer.company}`,
+    htmlContent: quotationEmail(quotation),
+    attachment: [{ name: `${quotation.quoteNumber}.pdf`, content: pdf.toString("base64") }],
   });
-  if (!customerResponse.ok) return { delivered: false, mode, error: "The sales alert was sent, but the customer quotation email failed." };
+  if (!customerResponse.ok) return { delivered: false, mode, error: "Brevo rejected the customer quotation email." };
   return { delivered: true, mode };
 }
