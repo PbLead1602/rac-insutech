@@ -6,6 +6,127 @@ import { racPdfLogo } from "@/lib/quotations/rac-logo-pdf";
 const safe = (value: string) => value.replace(/[()\\]/g, "\\$&").replace(/[^ -~]/g, "-");
 const money = (value: number) => `INR ${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 type PngImage = { width: number; height: number; idat: Buffer };
+type PdfSecurity = { encryptionKey: Buffer; ownerKey: Buffer; userKey: Buffer; fileId: Buffer; permissions: number };
+
+const passwordPadding = Buffer.from([
+  0x28, 0xbf, 0x4e, 0x5e, 0x4e, 0x75, 0x8a, 0x41, 0x64, 0x00, 0x4e, 0x56, 0xff, 0xfa, 0x01, 0x08,
+  0x2e, 0x2e, 0x00, 0xb6, 0xd0, 0x68, 0x3e, 0x80, 0x2f, 0x0c, 0xa9, 0xfe, 0x64, 0x53, 0x69, 0x7a,
+]);
+
+/** Minimal PDF Standard Security Handler primitives (128-bit RC4, revision 3). */
+function md5(input: Uint8Array) {
+  const initialLength = input.length;
+  const paddedLength = Math.floor((initialLength + 8) / 64 + 1) * 64;
+  const bytes = Buffer.alloc(paddedLength);
+  Buffer.from(input).copy(bytes);
+  bytes[initialLength] = 0x80;
+  const bitLength = initialLength * 8;
+  bytes.writeUInt32LE(bitLength >>> 0, paddedLength - 8);
+  bytes.writeUInt32LE(Math.floor(bitLength / 0x1_0000_0000) >>> 0, paddedLength - 4);
+  const shifts = [7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21];
+  const constants = Array.from({ length: 64 }, (_, index) => Math.floor(Math.abs(Math.sin(index + 1)) * 0x1_0000_0000) >>> 0);
+  const rotateLeft = (value: number, amount: number) => ((value << amount) | (value >>> (32 - amount))) >>> 0;
+  let a0 = 0x67452301;
+  let b0 = 0xefcdab89;
+  let c0 = 0x98badcfe;
+  let d0 = 0x10325476;
+
+  for (let offset = 0; offset < bytes.length; offset += 64) {
+    const words = Array.from({ length: 16 }, (_, index) => bytes.readUInt32LE(offset + index * 4));
+    let a = a0;
+    let b = b0;
+    let c = c0;
+    let d = d0;
+    for (let index = 0; index < 64; index += 1) {
+      const f = index < 16
+        ? (b & c) | (~b & d)
+        : index < 32
+          ? (d & b) | (~d & c)
+          : index < 48
+            ? b ^ c ^ d
+            : c ^ (b | ~d);
+      const wordIndex = index < 16 ? index : index < 32 ? (5 * index + 1) % 16 : index < 48 ? (3 * index + 5) % 16 : (7 * index) % 16;
+      const nextD = d;
+      d = c;
+      c = b;
+      b = (b + rotateLeft((a + f + constants[index] + words[wordIndex]) >>> 0, shifts[index])) >>> 0;
+      a = nextD;
+    }
+    a0 = (a0 + a) >>> 0;
+    b0 = (b0 + b) >>> 0;
+    c0 = (c0 + c) >>> 0;
+    d0 = (d0 + d) >>> 0;
+  }
+  const digest = Buffer.alloc(16);
+  digest.writeUInt32LE(a0, 0);
+  digest.writeUInt32LE(b0, 4);
+  digest.writeUInt32LE(c0, 8);
+  digest.writeUInt32LE(d0, 12);
+  return digest;
+}
+
+function rc4(key: Uint8Array, input: Uint8Array) {
+  const state = Uint8Array.from({ length: 256 }, (_, index) => index);
+  let keyIndex = 0;
+  for (let index = 0; index < 256; index += 1) {
+    keyIndex = (keyIndex + state[index] + key[index % key.length]) & 255;
+    [state[index], state[keyIndex]] = [state[keyIndex], state[index]];
+  }
+  const output = Buffer.alloc(input.length);
+  let index = 0;
+  let stateIndex = 0;
+  for (let offset = 0; offset < input.length; offset += 1) {
+    index = (index + 1) & 255;
+    stateIndex = (stateIndex + state[index]) & 255;
+    [state[index], state[stateIndex]] = [state[stateIndex], state[index]];
+    output[offset] = input[offset] ^ state[(state[index] + state[stateIndex]) & 255];
+  }
+  return output;
+}
+
+function paddedPassword(value: Uint8Array) {
+  const padded = Buffer.alloc(32);
+  const source = Buffer.from(value).subarray(0, 32);
+  source.copy(padded);
+  passwordPadding.copy(padded, source.length);
+  return padded;
+}
+
+function secureRandom(length: number) {
+  const bytes = Buffer.alloc(length);
+  globalThis.crypto.getRandomValues(bytes);
+  return bytes;
+}
+
+function createPdfSecurity(): PdfSecurity {
+  const userPassword = paddedPassword(Buffer.alloc(0));
+  const ownerPassword = paddedPassword(secureRandom(32));
+  let ownerDigest = md5(ownerPassword);
+  for (let index = 0; index < 50; index += 1) ownerDigest = md5(ownerDigest);
+  const ownerKeySeed = ownerDigest.subarray(0, 16);
+  let ownerKey = rc4(ownerKeySeed, userPassword);
+  for (let index = 1; index <= 19; index += 1) ownerKey = rc4(ownerKeySeed.map((byte) => byte ^ index), ownerKey);
+
+  // -3904 removes print, modify, copy/extract, annotate, form-fill and accessibility extraction permissions.
+  const permissions = -3904;
+  const permissionBytes = Buffer.alloc(4);
+  permissionBytes.writeInt32LE(permissions);
+  const fileId = secureRandom(16);
+  let encryptionKey = md5(Buffer.concat([userPassword, ownerKey, permissionBytes, fileId]));
+  for (let index = 0; index < 50; index += 1) encryptionKey = md5(encryptionKey.subarray(0, 16));
+  encryptionKey = encryptionKey.subarray(0, 16);
+
+  let userKey = rc4(encryptionKey, md5(Buffer.concat([passwordPadding, fileId])));
+  for (let index = 1; index <= 19; index += 1) userKey = rc4(encryptionKey.map((byte) => byte ^ index), userKey);
+  userKey = Buffer.concat([userKey, passwordPadding.subarray(0, 16)]);
+  return { encryptionKey, ownerKey, userKey, fileId, permissions };
+}
+
+function encryptPdfObject(value: Buffer, objectNumber: number, security: PdfSecurity) {
+  const objectBytes = Buffer.from([objectNumber & 255, (objectNumber >>> 8) & 255, (objectNumber >>> 16) & 255, 0, 0]);
+  const key = md5(Buffer.concat([security.encryptionKey, objectBytes])).subarray(0, Math.min(security.encryptionKey.length + 5, 16));
+  return rc4(key, value);
+}
 // The renderer must never depend on an HTTP request for branding. The exact
 // RAC asset is compacted at build time and embedded in every generated PDF.
 const racLogo: PngImage = {
@@ -65,21 +186,25 @@ function text(command: string[], values: string[], x: number, y: number, size: n
   command.push("ET");
 }
 
-function stream(value: string | Buffer) {
-  const data = Buffer.isBuffer(value) ? value : Buffer.from(value, "utf8");
+function stream(value: string | Buffer, security: PdfSecurity, objectNumber: number) {
+  const rawData = Buffer.isBuffer(value) ? value : Buffer.from(value, "utf8");
+  const data = encryptPdfObject(rawData, objectNumber, security);
   return Buffer.concat([Buffer.from(`<< /Length ${data.length} >>\nstream\n`), data, Buffer.from("\nendstream")]);
 }
 
-function imageObject(image: PngImage) {
-  const dictionary = `<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /DecodeParms << /Predictor 15 /Colors 3 /BitsPerComponent 8 /Columns ${image.width} >> /Length ${image.idat.length} >>\nstream\n`;
-  return Buffer.concat([Buffer.from(dictionary), image.idat, Buffer.from("\nendstream")]);
+function imageObject(image: PngImage, security: PdfSecurity, objectNumber: number) {
+  const data = encryptPdfObject(image.idat, objectNumber, security);
+  const dictionary = `<< /Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /FlateDecode /DecodeParms << /Predictor 15 /Colors 3 /BitsPerComponent 8 /Columns ${image.width} >> /Length ${data.length} >>\nstream\n`;
+  return Buffer.concat([Buffer.from(dictionary), data, Buffer.from("\nendstream")]);
 }
 
 function createPdf(contents: string[], logo: PngImage) {
+  const security = createPdfSecurity();
   const pageRefs = contents.map((_, index) => 3 + index * 2);
   const fontRef = 3 + contents.length * 2;
   const boldFontRef = fontRef + 1;
   const logoRef = fontRef + 2;
+  const encryptionRef = logoRef + 1;
   const objects: Array<string | Buffer> = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     `<< /Type /Pages /Kids [${pageRefs.map((reference) => `${reference} 0 R`).join(" ")}] /Count ${contents.length} >>`,
@@ -87,11 +212,12 @@ function createPdf(contents: string[], logo: PngImage) {
   contents.forEach((content, index) => {
     const pageRef = pageRefs[index];
     const imageResource = ` /XObject << /RacLogo ${logoRef} 0 R >>`;
-    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontRef} 0 R /F2 ${boldFontRef} 0 R >>${imageResource} >> /Contents ${pageRef + 1} 0 R >>`, stream(content));
+    objects.push(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 ${fontRef} 0 R /F2 ${boldFontRef} 0 R >>${imageResource} >> /Contents ${pageRef + 1} 0 R >>`, stream(content, security, pageRef + 1));
   });
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
   objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
-  objects.push(imageObject(logo));
+  objects.push(imageObject(logo, security, logoRef));
+  objects.push(`<< /Filter /Standard /V 2 /Length 128 /R 3 /O <${security.ownerKey.toString("hex")}> /U <${security.userKey.toString("hex")}> /P ${security.permissions} >>`);
   const chunks: Buffer[] = [Buffer.from("%PDF-1.5\n%RAC\n")];
   const offsets = [0];
   let length = chunks[0].length;
@@ -104,7 +230,8 @@ function createPdf(contents: string[], logo: PngImage) {
   const start = length;
   let trailer = `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
   offsets.slice(1).forEach((offset) => { trailer += `${String(offset).padStart(10, "0")} 00000 n \n`; });
-  trailer += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${start}\n%%EOF`;
+  const fileId = security.fileId.toString("hex");
+  trailer += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R /Encrypt ${encryptionRef} 0 R /ID [<${fileId}> <${fileId}>] >>\nstartxref\n${start}\n%%EOF`;
   chunks.push(Buffer.from(trailer));
   return Buffer.concat(chunks);
 }
@@ -115,6 +242,8 @@ function drawQuotationPage(quotation: QuotationRecord, items: QuotationRecord["i
   const accent = "0.00 0.51 0.76 rg";
   const muted = "0.29 0.4 0.53 rg";
   command.push("q", "0.98 0.99 1 rg", "0 0 612 792 re", "f", "Q");
+  // A light, diagonal watermark is present on every page without obscuring quotation details.
+  command.push("q", "BT", "/F2 38 Tf", "0.90 0.95 0.97 rg", "0.7071 0.7071 -0.7071 0.7071 170 260 Tm", "(RAC INSUTECH) Tj", "ET", "Q");
   // Header: editorial hierarchy on the left and one calm, aligned brand block on the right.
   command.push("q", "0.10 0.78 0.72 rg", "48 764 516 3 re", "f", "Q");
   command.push("q", "0.00 0.51 0.76 rg", "48 739 4 14 re", "f", "Q");

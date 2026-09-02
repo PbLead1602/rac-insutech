@@ -20,7 +20,9 @@ for (let row = 0; row < height; row += 1) assert.equal(scanlines[row * rowLength
 
 assert.match(rendererSource, /idat: Buffer\.from\(racPdfLogo\.compressedScanlinesBase64, "base64"\)/);
 assert.match(rendererSource, /\/RacLogo Do/);
-assert.match(rendererSource, /objects\.push\(imageObject\(logo\)\)/);
+assert.match(rendererSource, /objects\.push\(imageObject\(logo, security, logoRef\)\)/);
+assert.match(rendererSource, /\/Encrypt \$\{encryptionRef\} 0 R/);
+assert.match(rendererSource, /\(RAC INSUTECH\) Tj/);
 assert.doesNotMatch(rendererSource, /loadRacLogo|racLogoSrc|fetch\(/, "The PDF logo must not depend on a runtime network request.");
 
 function objectStream(value) {
