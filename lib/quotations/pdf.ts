@@ -95,9 +95,9 @@ function pngImage(bytes: Buffer): PngImage | null {
   return { width, height, idat: Buffer.concat(compressed) };
 }
 
-async function loadRacLogo(): Promise<PngImage | null> {
+async function loadRacLogo(assetOrigin: string): Promise<PngImage | null> {
   try {
-    const response = await fetch(new URL(racLogoSrc, serverEnv.siteUrl), { cache: "force-cache" });
+    const response = await fetch(new URL(racLogoSrc, assetOrigin), { cache: "force-cache" });
     if (!response.ok) return null;
     return pngImage(Buffer.from(await response.arrayBuffer()));
   } catch {
@@ -205,8 +205,8 @@ function drawQuotationPage(quotation: QuotationRecord, items: QuotationRecord["i
   return command.join("\n");
 }
 
-export async function createQuotationPdf(quotation: QuotationRecord) {
-  const logo = await loadRacLogo();
+export async function createQuotationPdf(quotation: QuotationRecord, assetOrigin = serverEnv.siteUrl) {
+  const logo = await loadRacLogo(assetOrigin);
   const firstPageItems = quotation.items.slice(0, 7);
   const remainingItems = quotation.items.slice(7);
   const followingPages: QuotationRecord["items"][] = [];

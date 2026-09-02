@@ -13,7 +13,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
   const quotation = await getAdminQuotation((await params).id);
   if (!quotation) return new Response("Quotation not found.", { status: 404 });
 
-  return new Response(await createQuotationPdf(quotation.quotation), {
+  return new Response(await createQuotationPdf(quotation.quotation, new URL(request.url).origin), {
     headers: {
       "Content-Type": "application/pdf",
       "Content-Disposition": `attachment; filename="${quotation.quotation.quoteNumber.toLowerCase()}.pdf"`,
