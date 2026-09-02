@@ -100,7 +100,7 @@ function quotationEmail(quotation: QuotationRecord) {
   return `<div style="font-family:Arial,Helvetica,sans-serif;color:#172b4d;line-height:1.6;font-size:15px"><p>Dear Sir/Madam,</p><p>Thank you very much for your valuable enquiry and for considering <strong>RAC Insutech</strong> for your insulation requirement.</p><p>With reference to your requirement for <strong>${escaped(projectName)}</strong>, please find attached our quotation <strong>${escaped(quotation.quoteNumber)}</strong> for your review.</p><p><strong>Quotation details:</strong></p><table style="border-collapse:collapse;margin:0 0 16px">${detailRows}</table><p>The attached PDF contains the selected product details, specifications, quantities, commercial value, applicable GST, and quotation terms.</p><p>Kindly review the quotation and feel free to contact us should you require any clarification, modification, additional quantity, alternative specification, or technical assistance.</p><p>We look forward to the opportunity to support your project and to establishing a long-term business association with your organisation.</p><p>Thank you.</p><p>Regards,<br><strong>RAC Insutech</strong></p><p><strong>Thermal &bull; Acoustic &bull; HVAC Insulation Solutions</strong></p><p>Email: <strong>racinsutech@gmail.com</strong><br>Phone: <strong>+91 91309 58594</strong><br>WhatsApp: <strong>+91 91309 58594</strong><br>Website: <a href="http://www.racinsutech.com">www.racinsutech.com</a><br>Address: <strong>Rukhmini Niwas, Near Vrundavan Garden Apartment, Behind Tulshan Bungalow, Geeta Nagar, Akola</strong></p></div>`;
 }
 
-export async function sendQuotationNotifications(quotation: QuotationRecord, assetOrigin?: string): Promise<EmailDispatchResult> {
+export async function sendQuotationNotifications(quotation: QuotationRecord): Promise<EmailDispatchResult> {
   // A quotation goes only to its customer. It must not depend on the RFQ
   // sales-recipient setting, which is intentionally used only for enquiries.
   const mode = integrationMode(Boolean(serverEnv.BREVO_API_KEY && serverEnv.BREVO_SENDER_EMAIL));
@@ -111,7 +111,7 @@ export async function sendQuotationNotifications(quotation: QuotationRecord, ass
   if (mode === "unconfigured") return { delivered: false, mode, error: "Brevo is not configured." };
 
   const sender = { email: serverEnv.BREVO_SENDER_EMAIL, name: serverEnv.BREVO_SENDER_NAME || "RAC Insutech" };
-  const pdf = await createQuotationPdf(quotation, assetOrigin ?? serverEnv.siteUrl);
+  const pdf = createQuotationPdf(quotation);
   const customerResponse = await sendBrevoEmail({
     sender,
     to: [{ email: quotation.customer.email, name: quotation.customer.fullName }],
