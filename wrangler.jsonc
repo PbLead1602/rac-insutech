@@ -13,15 +13,5 @@
   },
   "cache": {
     "enabled": true
-  },
-  "routes": [
-    {
-      "pattern": "racinsutech.com/*",
-      "zone_name": "racinsutech.com"
-    },
-    {
-      "pattern": "www.racinsutech.com/*",
-      "zone_name": "racinsutech.com"
-    }
-  ]
+  }
 }

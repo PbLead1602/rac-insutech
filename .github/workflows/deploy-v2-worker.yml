@@ -49,5 +49,8 @@ jobs:
       - name: Build V2 Worker
         run: npm run build:vinext
 
-      - name: Deploy V2 Worker and production routes
+      # Production routes are protected cutover infrastructure. They already
+      # point to this Worker and are intentionally not managed by CI, so the
+      # deployment token needs access only to this Worker.
+      - name: Deploy V2 Worker
         run: npx wrangler deploy --config dist/server/wrangler.json
