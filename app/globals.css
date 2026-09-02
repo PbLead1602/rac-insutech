@@ -432,3 +432,44 @@ section[id], article[id] { scroll-margin-top: 108px; }
 .secure-built-up-commercial { align-content:start; gap:7px !important; }.secure-built-up-commercial > span { display:grid; gap:1px; padding-bottom:6px; border-bottom:1px dashed #d5e7e8; color:#254d70; font-size:11px; font-weight:800; }.secure-built-up-commercial > span:last-child { padding-bottom:0; border-bottom:0; }.secure-built-up-commercial > span small { font-size:8px; }.secure-built-up-amounts > span { color:#157565; }
 .customer-built-up-commercial { align-content:start; gap:7px !important; }.customer-built-up-commercial > span { display:grid; gap:2px; padding-bottom:6px; border-bottom:1px dashed #d7e5eb; color:#274f71; font-size:10px; font-weight:800; }.customer-built-up-commercial > span:last-child { padding-bottom:0; border-bottom:0; }.customer-built-up-commercial > span small { font-size:8px; }.customer-built-up-amounts > span { color:#157565; }
 @media (max-width:720px) { .built-up-nbr-layer-pricing > div { grid-template-columns:1fr; } }
+
+/* Manual quotation on a phone is a normal single-column workspace. The
+   selected-line grid is the sole deliberate horizontal-scroll region. */
+@media (max-width:760px) {
+  .admin-create-page { width:100%; min-width:0; overflow-x:clip; padding:16px 12px 34px; }
+  .admin-create-page > .admin-os-content { width:100%; min-width:0; gap:13px; }
+  .admin-create-page .admin-os-module-intro { min-height:0; padding:17px; align-items:stretch; flex-direction:column; gap:15px; }
+  .admin-create-page .admin-os-module-intro h2 { font-size:22px; line-height:1.12; }
+  .admin-create-page .admin-os-module-intro > div > span { font-size:11px; line-height:1.5; }
+  .admin-create-page .admin-os-module-intro > button { width:100%; min-height:44px; font-size:11px; }
+  .admin-manual-quotation { width:100%; min-width:0; padding:16px !important; gap:16px; overflow:visible; }
+  .admin-manual-quotation .admin-customer-fields-grid { grid-template-columns:1fr; gap:12px; }
+  .admin-manual-quotation label { gap:7px; font-size:11px; }
+  .admin-manual-quotation input,
+  .admin-manual-quotation select,
+  .admin-manual-quotation textarea { min-height:44px; padding:10px 11px; font-size:14px; }
+  .admin-manual-quotation textarea { min-height:92px; }
+  .admin-manual-quotation .nitrile-insulation-type { margin-top:2px; }
+  .admin-manual-quotation .admin-multiple-selection { margin:2px 0 0; min-width:0; padding:14px; }
+  .admin-manual-quotation .admin-multiple-selection-heading { align-items:flex-start; flex-direction:column; gap:8px; }
+  .admin-manual-quotation .admin-multiple-selection-heading h3 { font-size:17px; }
+  .admin-manual-quotation .admin-multiple-selection-heading > span { max-width:none; font-size:10px; }
+  .admin-manual-quotation .admin-multiple-selection-grid { grid-template-columns:1fr; gap:12px; }
+  .admin-manual-quotation .admin-multiple-checks { grid-column:auto; min-width:0; padding:10px; }
+  .admin-manual-quotation .admin-multiple-checks > div { display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:7px; }
+  .admin-manual-quotation .admin-multiple-checks label { min-width:0; min-height:40px; padding:7px 9px; border-radius:9px; font-size:10px; line-height:1.3; }
+  .admin-manual-quotation .admin-multiple-selection-add { width:100%; min-height:48px; justify-content:center; font-size:11px; }
+  .admin-manual-quotation .built-up-nbr,
+  .admin-manual-quotation .built-up-nbr-basket,
+  .admin-manual-quotation .admin-selected-configurations { width:100%; min-width:0; max-width:100%; }
+  .admin-manual-quotation .admin-selected-configurations .admin-drawer-section-heading { align-items:flex-start; flex-direction:column; gap:7px; }
+  .admin-manual-quotation .admin-selected-configurations-scroll { width:100%; max-width:100%; min-width:0; overflow-x:auto; overflow-y:hidden; overscroll-behavior-x:contain; -webkit-overflow-scrolling:touch; touch-action:pan-x; }
+  .admin-manual-quotation .admin-selected-configurations table { width:910px; min-width:910px; }
+  .admin-manual-quotation .admin-revision-total { width:100%; margin-left:0; padding:13px; border:1px solid #d8e6ef; border-radius:10px; background:#fbfdff; }
+  .admin-manual-quotation .admin-customer-form-actions { display:grid; grid-template-columns:1fr; gap:9px; }
+  .admin-manual-quotation .admin-customer-form-actions > button { width:100%; min-height:46px; flex:auto; font-size:12px; }
+}
+@media (max-width:380px) {
+  .admin-manual-quotation { padding:13px !important; }
+  .admin-manual-quotation .admin-multiple-checks > div { grid-template-columns:1fr; }
+}
