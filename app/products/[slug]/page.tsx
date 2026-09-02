@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
@@ -21,6 +22,24 @@ type ProductPageProps = { params: Promise<{ slug: string }> };
 
 export function generateStaticParams() {
   return catalogue.map((product) => ({ slug: product.slug }));
+}
+
+export async function generateMetadata({ params }: ProductPageProps): Promise<Metadata> {
+  const { slug } = await params;
+  const product = getProduct(slug);
+  if (!product) return { title: "Product not found | RAC Insutech" };
+
+  return {
+    title: `${product.name} | RAC Insutech`,
+    description: product.shortDescription,
+    alternates: { canonical: `/products/${product.slug}` },
+    openGraph: {
+      title: `${product.name} | RAC Insutech`,
+      description: product.shortDescription,
+      url: `/products/${product.slug}`,
+      images: [{ url: product.image, alt: product.name }],
+    },
+  };
 }
 
 export default async function ProductPage({ params }: ProductPageProps) {
