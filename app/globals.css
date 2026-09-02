@@ -433,8 +433,8 @@ section[id], article[id] { scroll-margin-top: 108px; }
 .customer-built-up-commercial { align-content:start; gap:7px !important; }.customer-built-up-commercial > span { display:grid; gap:2px; padding-bottom:6px; border-bottom:1px dashed #d7e5eb; color:#274f71; font-size:10px; font-weight:800; }.customer-built-up-commercial > span:last-child { padding-bottom:0; border-bottom:0; }.customer-built-up-commercial > span small { font-size:8px; }.customer-built-up-amounts > span { color:#157565; }
 @media (max-width:720px) { .built-up-nbr-layer-pricing > div { grid-template-columns:1fr; } }
 
-/* Manual quotation on a phone is a normal single-column workspace. The
-   selected-line grid is the sole deliberate horizontal-scroll region. */
+/* Manual quotation uses the same compact mobile rhythm as the public
+   quotation builder. The selected-line table remains the sole scroll region. */
 @media (max-width:760px) {
   .admin-create-page { width:100%; min-width:0; overflow-x:clip; padding:16px 12px 34px; }
   .admin-create-page > .admin-os-content { width:100%; min-width:0; gap:13px; }
@@ -442,23 +442,24 @@ section[id], article[id] { scroll-margin-top: 108px; }
   .admin-create-page .admin-os-module-intro h2 { font-size:22px; line-height:1.12; }
   .admin-create-page .admin-os-module-intro > div > span { font-size:11px; line-height:1.5; }
   .admin-create-page .admin-os-module-intro > button { width:100%; min-height:44px; font-size:11px; }
-  .admin-manual-quotation { width:100%; min-width:0; padding:16px !important; gap:16px; overflow:visible; }
-  .admin-manual-quotation .admin-customer-fields-grid { grid-template-columns:1fr; gap:12px; }
-  .admin-manual-quotation label { gap:7px; font-size:11px; }
-  .admin-manual-quotation input,
-  .admin-manual-quotation select,
-  .admin-manual-quotation textarea { min-height:44px; padding:10px 11px; font-size:14px; }
-  .admin-manual-quotation textarea { min-height:92px; }
+  .admin-manual-quotation { width:100%; min-width:0; padding:16px !important; gap:13px; overflow:visible; }
+  .admin-manual-quotation .admin-customer-fields-grid { grid-template-columns:1fr; gap:11px; }
+  .admin-manual-quotation > .admin-customer-fields-grid > label { gap:7px; color:#34516e; font-size:11px; }
+  .admin-manual-quotation > .admin-customer-fields-grid input,
+  .admin-manual-quotation > .admin-customer-fields-grid select,
+  .admin-manual-quotation > .admin-customer-fields-grid textarea { min-height:42px; padding:10px 11px; color:#17395e; background:#fbfdff; font-size:16px; font-weight:500; }
+  .admin-manual-quotation > .admin-customer-fields-grid textarea { min-height:82px; }
   .admin-manual-quotation .nitrile-insulation-type { margin-top:2px; }
-  .admin-manual-quotation .admin-multiple-selection { margin:2px 0 0; min-width:0; padding:14px; }
+  .admin-manual-quotation .admin-multiple-selection { margin:14px 0 0; min-width:0; padding:13px; border-radius:10px; }
   .admin-manual-quotation .admin-multiple-selection-heading { align-items:flex-start; flex-direction:column; gap:8px; }
-  .admin-manual-quotation .admin-multiple-selection-heading h3 { font-size:17px; }
+  .admin-manual-quotation .admin-multiple-selection-heading h3 { font-size:15px; }
   .admin-manual-quotation .admin-multiple-selection-heading > span { max-width:none; font-size:10px; }
-  .admin-manual-quotation .admin-multiple-selection-grid { grid-template-columns:1fr; gap:12px; }
-  .admin-manual-quotation .admin-multiple-checks { grid-column:auto; min-width:0; padding:10px; }
-  .admin-manual-quotation .admin-multiple-checks > div { display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:7px; }
-  .admin-manual-quotation .admin-multiple-checks label { min-width:0; min-height:40px; padding:7px 9px; border-radius:9px; font-size:10px; line-height:1.3; }
-  .admin-manual-quotation .admin-multiple-selection-add { width:100%; min-height:48px; justify-content:center; font-size:11px; }
+  .admin-manual-quotation .admin-multiple-selection-grid { grid-template-columns:1fr; gap:11px; }
+  .admin-manual-quotation .admin-multiple-checks { grid-column:auto; min-width:0; padding:11px; border-radius:9px; background:rgba(255,255,255,.76); }
+  .admin-manual-quotation .admin-multiple-checks > div { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+  .admin-manual-quotation .admin-multiple-checks label { min-width:0; min-height:31px; padding:0 9px; border-radius:999px; font-size:10px; line-height:1.3; }
+  .admin-manual-quotation .admin-multiple-checks label:has(input:checked) { border-color:#75cbca; color:#126c72; background:#eafaf7; }
+  .admin-manual-quotation .admin-multiple-selection-add { width:100%; min-height:45px; justify-content:center; padding:0 16px; font-size:12px; }
   .admin-manual-quotation .built-up-nbr,
   .admin-manual-quotation .built-up-nbr-basket,
   .admin-manual-quotation .admin-selected-configurations { width:100%; min-width:0; max-width:100%; }
@@ -469,7 +470,4 @@ section[id], article[id] { scroll-margin-top: 108px; }
   .admin-manual-quotation .admin-customer-form-actions { display:grid; grid-template-columns:1fr; gap:9px; }
   .admin-manual-quotation .admin-customer-form-actions > button { width:100%; min-height:46px; flex:auto; font-size:12px; }
 }
-@media (max-width:380px) {
-  .admin-manual-quotation { padding:13px !important; }
-  .admin-manual-quotation .admin-multiple-checks > div { grid-template-columns:1fr; }
-}
+@media (max-width:380px) { .admin-manual-quotation { padding:13px !important; } }
