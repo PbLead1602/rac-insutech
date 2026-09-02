@@ -1,0 +1,53 @@
+name: Deploy V2 Worker
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: rac-insutech-v2-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # This remains off until the repository has a narrowly scoped
+    # CLOUDFLARE_API_TOKEN secret. It prevents a main push from using a
+    # developer's personal Wrangler OAuth token.
+    if: vars.CLOUDFLARE_DEPLOY_ENABLED == 'true'
+    name: Test and deploy V2
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+      NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL }}
+      NEXT_PUBLIC_SUPABASE_URL: ${{ vars.NEXT_PUBLIC_SUPABASE_URL }}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ vars.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ vars.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
+      NEXT_PUBLIC_ENABLE_DEV_MOCKS: "false"
+      NEXT_PUBLIC_QUOTATION_GST_RATE: "18"
+    steps:
+      - name: Check out main
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build V2 Worker
+        run: npm run build:vinext
+
+      - name: Deploy V2 Worker and production routes
+        run: npx wrangler deploy --config dist/server/wrangler.json
