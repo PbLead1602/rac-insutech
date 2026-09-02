@@ -432,3 +432,49 @@ section[id], article[id] { scroll-margin-top: 108px; }
 .secure-built-up-commercial { align-content:start; gap:7px !important; }.secure-built-up-commercial > span { display:grid; gap:1px; padding-bottom:6px; border-bottom:1px dashed #d5e7e8; color:#254d70; font-size:11px; font-weight:800; }.secure-built-up-commercial > span:last-child { padding-bottom:0; border-bottom:0; }.secure-built-up-commercial > span small { font-size:8px; }.secure-built-up-amounts > span { color:#157565; }
 .customer-built-up-commercial { align-content:start; gap:7px !important; }.customer-built-up-commercial > span { display:grid; gap:2px; padding-bottom:6px; border-bottom:1px dashed #d7e5eb; color:#274f71; font-size:10px; font-weight:800; }.customer-built-up-commercial > span:last-child { padding-bottom:0; border-bottom:0; }.customer-built-up-commercial > span small { font-size:8px; }.customer-built-up-amounts > span { color:#157565; }
 @media (max-width:720px) { .built-up-nbr-layer-pricing > div { grid-template-columns:1fr; } }
+
+/* Keep the Admin quotation creator usable on touch screens. A commercial
+   line has six desktop columns; on compact screens each line becomes its own
+   labelled card so no value or action is hidden off the right edge. */
+@media (max-width:860px) {
+  .admin-create-page { padding:18px 14px 38px; overflow-x:hidden; }
+  .admin-create-page .admin-os-module-intro { min-height:0; align-items:stretch; flex-direction:column; padding:18px; }
+  .admin-create-page .admin-os-module-intro > button { width:100%; }
+  .admin-multiple-selection { margin:16px 0; padding:14px; overflow:hidden; }
+  .admin-multiple-selection-heading { display:grid; gap:8px; align-items:start; }
+  .admin-multiple-selection-heading h3 { font-size:17px; }
+  .admin-multiple-selection-heading > span { max-width:none; font-size:10px; }
+  .admin-multiple-selection-grid { grid-template-columns:1fr; gap:11px; }
+  .admin-multiple-checks { grid-column:auto; min-width:0; padding:10px; }
+  .admin-multiple-checks > div { display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:7px; }
+  .admin-multiple-checks label { min-width:0; min-height:40px; padding:7px 10px; border-radius:10px; line-height:1.3; }
+  .admin-multiple-selection-add { width:100%; min-height:48px; justify-content:center; padding:0 14px; white-space:normal; text-align:center; }
+  .admin-selected-configurations .admin-drawer-section-heading { align-items:flex-start; flex-direction:column; gap:7px; }
+  .admin-selected-configurations-scroll { overflow:visible; border:0; background:transparent; }
+  .admin-selected-configurations table,
+  .admin-selected-configurations tbody,
+  .admin-selected-configurations tr,
+  .admin-selected-configurations td { display:block; width:100%; min-width:0; }
+  .admin-selected-configurations table { border:0; }
+  .admin-selected-configurations thead { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+  .admin-selected-configurations tbody { display:grid; gap:10px; }
+  .admin-selected-configurations tr { padding:13px; border:1px solid #dbe8f1; border-radius:11px; background:#fff; }
+  .admin-selected-configurations td { min-width:0 !important; padding:9px 0; border-top:1px solid #e4edf3; }
+  .admin-selected-configurations td:first-child { padding-top:0; border-top:0; }
+  .admin-selected-configurations td:last-child { padding-bottom:0; }
+  .admin-selected-configurations td:not(:first-child) { display:grid; grid-template-columns:minmax(105px,.85fr) minmax(0,1.15fr); align-items:start; gap:9px; }
+  .admin-selected-configurations td:nth-child(2)::before { content:"Order quantity"; }
+  .admin-selected-configurations td:nth-child(3)::before { content:"Supply quantity"; }
+  .admin-selected-configurations td:nth-child(4)::before { content:"Rate / unit"; }
+  .admin-selected-configurations td:nth-child(5)::before { content:"Subtotal"; }
+  .admin-selected-configurations td:nth-child(6)::before { content:"Action"; }
+  .admin-selected-configurations td:not(:first-child)::before { color:#71879a; font-size:9px; font-weight:850; letter-spacing:.04em; text-transform:uppercase; }
+  .admin-selected-configurations input { width:100%; min-height:38px; }
+  .admin-selected-configurations td > span,
+  .admin-selected-configurations td > small { margin-top:3px; }
+}
+@media (max-width:460px) {
+  .admin-multiple-checks > div { grid-template-columns:1fr; }
+  .admin-selected-configurations td:not(:first-child) { grid-template-columns:1fr; gap:5px; }
+  .admin-selected-configurations td:last-child button { width:100%; justify-content:center; }
+}
