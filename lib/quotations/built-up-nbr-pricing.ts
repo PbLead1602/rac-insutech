@@ -81,7 +81,7 @@ export async function priceCustomBuiltUpNbrItem(selection: BuiltUpNbrSelection, 
   return {
     variantId: variants[0].variant.id,
     productName: snapshot.productNameSnapshot,
-    configuration: `${materialClass} | ${calculation.baseDiameterMm} mm pipe | ${calculation.requiredTotalThicknessMm} mm total | ${layerDescription} | Finished OD ${calculation.finishedOuterDiameterMm} mm`,
+    configuration: `${materialClass} | ${calculation.baseDiameterMm} mm pipe | ${calculation.pipeLengthM} m pipe length | ${calculation.requiredTotalThicknessMm} mm total | ${layerDescription} | Finished OD ${calculation.finishedOuterDiameterMm} mm`,
     requestedQuantity: calculation.pipeLengthM,
     requestedUnit: "running_metre",
     suppliedQuantity: calculation.pipeLengthM,

@@ -414,6 +414,34 @@ function QuoteModal({ initialProduct, onClose }: { initialProduct: string; onClo
   const [submissionId] = useState(() => globalThis.crypto?.randomUUID?.() || "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    let current = true;
+    (async () => {
+      try {
+        const response = await customerFetch("/api/customer-auth/me", { cache: "no-store" });
+        const result = await response.json() as {
+          account?: { fullName?: string; companyName?: string; mobile?: string; email?: string };
+          customer?: { fullName?: string; company?: string; phone?: string; email?: string };
+        };
+        if (!response.ok || !result.account || !current) return;
+        const values = {
+          name: result.customer?.fullName || result.account.fullName || "",
+          company: result.customer?.company || result.account.companyName || result.account.fullName || "",
+          mobile: result.customer?.phone || result.account.mobile || "",
+          email: result.customer?.email || result.account.email || "",
+        };
+        (Object.entries(values) as Array<[keyof typeof values, string]>).forEach(([field, value]) => {
+          const input = document.querySelector<HTMLInputElement>(`.quote-modal input[name="${field}"]`);
+          if (input) input.value = value;
+        });
+      } catch {
+        // Enquiries are public, so a visitor without a valid session simply
+        // continues with the blank form.
+      }
+    })();
+    return () => { current = false; };
+  }, []);
+
   const submitQuote = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -427,12 +455,12 @@ function QuoteModal({ initialProduct, onClose }: { initialProduct: string; onClo
       // without an account; signed-in customers get the enquiry linked to
       // their existing customer record automatically.
       const response = await customerFetch("/api/rfq", { method: "POST", body: values });
-      const result = await response.json() as { ok?: boolean; id?: string; enquiryNumber?: string; continuationToken?: string; message?: string };
-      if (!response.ok || !result.ok || !result.id || !result.continuationToken) throw new Error(result.message || "We could not save your enquiry.");
+      const result = await response.json() as { ok?: boolean; id?: string; enquiryNumber?: string; continuationToken?: string; directToQuotationBuilder?: boolean; message?: string };
+      if (!response.ok || !result.ok || !result.id || (!result.directToQuotationBuilder && !result.continuationToken)) throw new Error(result.message || "We could not save your enquiry.");
       saveQuoteLeadDraft({
         enquiryId: result.id,
         enquiryNumber: result.enquiryNumber || result.id,
-        continuationToken: result.continuationToken,
+        continuationToken: result.continuationToken || "",
         name: String(values.get("name") || "").trim(), company: String(values.get("company") || "").trim(),
         mobile: String(values.get("mobile") || "").trim(), email: String(values.get("email") || "").trim(),
         city: String(values.get("city") || "").trim(), state: String(values.get("state") || "").trim(), pinCode: String(values.get("pinCode") || "").trim(),
@@ -441,7 +469,7 @@ function QuoteModal({ initialProduct, onClose }: { initialProduct: string; onClo
         thickness: String(values.get("thickness") || "").trim(), application: String(values.get("application") || "").trim(), customerType: String(values.get("customerType") || "end_user") as "end_user" | "contractor" | "consultant" | "dealer" | "other", deliveryPreference: String(values.get("deliveryPreference") || "").trim(), message: String(values.get("message") || "").trim(),
       });
       onClose();
-      router.push(`/account/continue?intent=${encodeURIComponent(result.continuationToken)}`);
+      router.push(result.directToQuotationBuilder ? "/generate-quotation" : `/account/continue?intent=${encodeURIComponent(result.continuationToken || "")}`);
     } catch (submissionError) {
       setError(submissionError instanceof Error ? submissionError.message : "We could not save your enquiry.");
     } finally {

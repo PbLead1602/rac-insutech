@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { createEnquiry } from "@/lib/repositories/enquiries";
+import { createEnquiry, updateAdminEnquiry } from "@/lib/repositories/enquiries";
 import { createEnquiryContinuation } from "@/lib/repositories/customer-accounts";
+import { findOrCreateProjectForQuotation } from "@/lib/repositories/projects";
 import { sendRfqNotifications } from "@/lib/services/brevo";
 import { rfqSchema } from "@/lib/validation/rfq";
 import { getCustomerRequestContext } from "@/lib/auth/customer-server";
@@ -64,27 +65,84 @@ export async function POST(request: Request) {
           customerId: customerContext.customer?.id,
         }
       : undefined;
-    const { enquiry, mode: storageMode, created } = await createEnquiry(payload.data, attachment, links);
-    let continuation: Awaited<ReturnType<typeof createEnquiryContinuation>>;
-    try {
-      continuation = await createEnquiryContinuation(enquiry.id);
-    } catch (error) {
-      // The enquiry is already safely stored. Do not invite the visitor to
-      // submit it again and create a duplicate when only the next step failed.
-      console.error("RFQ continuation creation failed", {
-        enquiryId: enquiry.id,
-        message: error instanceof Error ? error.message : "Unknown continuation error",
-      });
-      return NextResponse.json(
-        {
-          ok: false,
-          saved: true,
-          id: enquiry.id,
-          enquiryNumber: enquiry.enquiryNumber,
-          message: "Your enquiry has been saved. We could not start quotation access right now; please sign in from My Account or contact RAC with this enquiry number.",
-        },
-        { status: 503 },
-      );
+    // A signed-in customer's commercial identity always comes from their
+    // account record. This prevents a browser from attaching a customer-owned
+    // enquiry to a different name, email or mobile number.
+    const canonicalInput = customerContext ? {
+      ...payload.data,
+      name: customerContext.customer?.fullName || customerContext.account.fullName || payload.data.name,
+      company: customerContext.customer?.company || customerContext.account.companyName || customerContext.account.fullName || payload.data.company,
+      mobile: customerContext.customer?.phone || customerContext.account.mobile || payload.data.mobile,
+      email: customerContext.customer?.email || customerContext.account.email || payload.data.email,
+      city: payload.data.city || customerContext.customer?.city || "",
+      state: payload.data.state || customerContext.customer?.state || "",
+      pinCode: payload.data.pinCode || customerContext.customer?.pinCode || "",
+      customerType: customerContext.account.customerType,
+    } : payload.data;
+    const { enquiry, mode: storageMode, created } = await createEnquiry(canonicalInput, attachment, links);
+    const directToQuotationBuilder = customerContext?.account.status === "active" && Boolean(customerContext.customer);
+
+    if (directToQuotationBuilder && customerContext?.customer) {
+      // Store the project as soon as a logged-in customer submits an enquiry.
+      // The same project is reused when that enquiry becomes a quotation.
+      try {
+        const project = await findOrCreateProjectForQuotation({
+          customer: {
+            fullName: canonicalInput.name,
+            company: canonicalInput.company,
+            mobile: canonicalInput.mobile,
+            email: canonicalInput.email,
+            city: canonicalInput.city,
+            state: canonicalInput.state,
+            pinCode: canonicalInput.pinCode,
+            customerType: canonicalInput.customerType,
+            projectName: canonicalInput.projectName,
+            projectLocation: canonicalInput.projectLocation,
+            deliveryPreference: canonicalInput.deliveryPreference,
+            notes: canonicalInput.message,
+          },
+          customerId: customerContext.customer.id,
+          fallbackTitle: `${canonicalInput.company || canonicalInput.name} enquiry`,
+        });
+        if (project) {
+          await updateAdminEnquiry(enquiry.id, {
+            accountId: customerContext.account.id,
+            customerId: customerContext.customer.id,
+            projectId: project.project.id,
+          });
+        }
+      } catch (projectError) {
+        // The enquiry is already captured and the quotation workflow will
+        // safely retry project creation. Do not make the customer resubmit.
+        console.error("RFQ project link failed", {
+          enquiryId: enquiry.id,
+          message: projectError instanceof Error ? projectError.message : "Unknown project link error",
+        });
+      }
+    }
+
+    let continuationToken: string | undefined;
+    if (!directToQuotationBuilder) {
+      try {
+        continuationToken = (await createEnquiryContinuation(enquiry.id)).token;
+      } catch (error) {
+        // The enquiry is already safely stored. Do not invite the visitor to
+        // submit it again and create a duplicate when only the next step failed.
+        console.error("RFQ continuation creation failed", {
+          enquiryId: enquiry.id,
+          message: error instanceof Error ? error.message : "Unknown continuation error",
+        });
+        return NextResponse.json(
+          {
+            ok: false,
+            saved: true,
+            id: enquiry.id,
+            enquiryNumber: enquiry.enquiryNumber,
+            message: "Your enquiry has been saved. We could not start quotation access right now; please sign in from My Account or contact RAC with this enquiry number.",
+          },
+          { status: 503 },
+        );
+      }
     }
 
     // Email is an operational notification, not a prerequisite for recording
@@ -97,7 +155,8 @@ export async function POST(request: Request) {
       ok: true,
       id: enquiry.id,
       enquiryNumber: enquiry.enquiryNumber,
-      continuationToken: continuation.token,
+      continuationToken,
+      directToQuotationBuilder,
       message: "Thank you — RAC’s technical team will be in touch shortly.",
       integrations: { storage: storageMode, email: email.mode },
     });
