@@ -99,7 +99,12 @@ export async function POST(request: Request) {
             projectName: canonicalInput.projectName,
             projectLocation: canonicalInput.projectLocation,
             deliveryPreference: canonicalInput.deliveryPreference,
-            notes: canonicalInput.message,
+            notes: [
+              canonicalInput.product ? `Product / material: ${canonicalInput.product}` : "",
+              canonicalInput.application ? `Application: ${canonicalInput.application}` : "",
+              canonicalInput.deliveryPreference ? `Delivery preference: ${canonicalInput.deliveryPreference}` : "",
+              canonicalInput.message,
+            ].filter(Boolean).join("\n"),
           },
           customerId: customerContext.customer.id,
           fallbackTitle: `${canonicalInput.company || canonicalInput.name} enquiry`,
