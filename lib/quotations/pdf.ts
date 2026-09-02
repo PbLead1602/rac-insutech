@@ -41,6 +41,15 @@ function lines(value: string, width = 80) {
   return result;
 }
 
+/** Older custom NBR snapshots predate pipe length in configuration text. */
+function displayedConfiguration(item: QuotationRecord["items"][number]) {
+  const custom = item.customBuiltUp;
+  if (!custom || /pipe length/i.test(item.configuration)) return item.configuration;
+  const pipe = `${custom.baseDiameterMm} mm pipe`;
+  const withLength = `${pipe} | ${custom.pipeLengthM} m pipe length`;
+  return item.configuration.includes(pipe) ? item.configuration.replace(pipe, withLength) : `${item.configuration} | ${custom.pipeLengthM} m pipe length`;
+}
+
 function text(command: string[], values: string[], x: number, y: number, size: number, color = "0.08 0.18 0.32 rg", leading = 10) {
   command.push("BT", `/F1 ${size} Tf`, color, `${x} ${y} Td`, `${leading} TL`);
   values.forEach((value) => command.push(`(${safe(value)}) Tj`, "T*"));
@@ -111,9 +120,10 @@ function drawQuotationPage(quotation: QuotationRecord, items: QuotationRecord["i
     command.push("q", "1 1 1 rg", `48 ${y} 516 ${rowHeight} re`, "f", "Q", "q", "0.78 0.86 0.93 RG", "0.4 w", `48 ${y} 516 ${rowHeight} re`, "S", "Q");
     const textY = y + rowHeight - 12;
     text(command, [String(itemOffset + index + 1)], 55, textY, 7.3, "0.08 0.18 0.32 rg");
+    const configuration = displayedConfiguration(item);
     const productLines = custom
-      ? [item.productName, ...lines(item.configuration, 42), `Grouped basic total: ${money(item.amount)}`]
-      : [item.productName, ...lines(item.configuration, 45)];
+      ? [item.productName, ...lines(configuration, 42), `Grouped basic total: ${money(item.amount)}`]
+      : [item.productName, ...lines(configuration, 45)];
     text(command, productLines, 80, textY, 7.3, "0.08 0.18 0.32 rg", 8.4);
     if (custom) {
       text(command, custom.layers.map((layer) => `L${layer.layerNumber}: ${layer.quotedAreaM2.toFixed(2)} m2`), 334, textY, 7.1, "0.08 0.18 0.32 rg", 11.2);
