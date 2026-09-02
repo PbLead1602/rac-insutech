@@ -410,10 +410,10 @@ function GenerateQuotationWorkspace() {
           turnstileToken,
         }),
       });
-      const result = await response.json() as { ok: boolean; message?: string; quotation?: { id: string; accessToken: string } };
+      const result = await response.json() as { ok: boolean; message?: string; quotation?: { id: string; accessToken: string }; notification?: { emailDelivered?: boolean } };
       if (!response.ok || !result.ok || !result.quotation) throw new Error(result.message || "We could not generate the quotation.");
       clearQuoteLeadDraft();
-      router.push(`/quotation/success/${result.quotation.id}?token=${encodeURIComponent(result.quotation.accessToken)}`);
+      router.push(`/quotation/success/${result.quotation.id}?token=${encodeURIComponent(result.quotation.accessToken)}&email=${result.notification?.emailDelivered ? "sent" : "pending"}`);
     } catch (error) {
       setMessageTone("error");
       setMessage(error instanceof Error ? error.message : "We could not generate the quotation.");

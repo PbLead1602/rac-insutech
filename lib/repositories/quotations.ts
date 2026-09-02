@@ -5,6 +5,7 @@ import { integrationMode, type IntegrationMode } from "@/lib/env";
 import { serverEnv } from "@/lib/env/server";
 import type { CustomBuiltUpNbrSnapshot, QuotationCustomer, QuotationLineRecord, QuotationNote, QuotationRecord, QuotationSource, QuotationStatus } from "@/lib/db/types";
 import { getServerPricedVariant } from "@/lib/quotations/pricing";
+import { nextQuotationStatusForPatch, quotationShouldExpire } from "@/lib/quotations/status";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { persistentDevelopmentStore } from "@/lib/development/persistent-store";
 
@@ -40,6 +41,7 @@ export type CreateAdminQuotationInput = {
   validUntil?: string;
   internalNotes?: string;
   customerId?: string;
+  accountId?: string;
   projectId?: string;
   enquiryId?: string;
 };
@@ -327,10 +329,13 @@ export async function createAdminQuotation(input: CreateAdminQuotationInput): Pr
     gstAmount,
     total: Number((subtotal + gstAmount).toFixed(2)),
     source: input.enquiryId ? "enquiry_converted" : "admin_created",
-    status: "draft",
+    // The Admin action has created an actual quotation. It becomes "sent"
+    // only after the customer email provider confirms delivery.
+    status: "generated",
     validUntil: input.validUntil,
     internalNotes: input.internalNotes,
     customerId: input.customerId,
+    accountId: input.accountId,
     projectId: input.projectId,
     enquiryId: input.enquiryId,
   });
@@ -338,7 +343,12 @@ export async function createAdminQuotation(input: CreateAdminQuotationInput): Pr
 
 export async function getQuotationByAccessToken(accessToken: string): Promise<QuotationRecord | null> {
   const mode = integrationMode(serverEnv.supabaseServiceConfigured);
-  if (mode === "mock") return developmentStore().quotations.find((quote) => quote.accessToken === accessToken) || null;
+  if (mode === "mock") {
+    const index = developmentStore().quotations.findIndex((quote) => quote.accessToken === accessToken);
+    if (index < 0) return null;
+    if (quotationShouldExpire(developmentStore().quotations[index])) developmentStore().quotations[index] = { ...developmentStore().quotations[index], status: "expired" };
+    return developmentStore().quotations[index];
+  }
   if (mode === "unconfigured") return null;
 
   const client = getSupabaseServiceClient();
@@ -346,18 +356,33 @@ export async function getQuotationByAccessToken(accessToken: string): Promise<Qu
   const { data: quotation, error } = await client.from("quotations").select("*").eq("access_token", accessToken).maybeSingle();
   if (error || !quotation) return null;
   const { data: items } = await client.from("quotation_items").select("*").eq("quotation_id", quotation.id).order("sort_order");
-  return quotationFromRow(quotation as Record<string, unknown>, (items || []) as Record<string, unknown>[]);
+  const record = quotationFromRow(quotation as Record<string, unknown>, (items || []) as Record<string, unknown>[]);
+  if (!quotationShouldExpire(record)) return record;
+  const { error: expiryError } = await client.from("quotations").update({ status: "expired" }).eq("id", record.id);
+  if (expiryError) throw new Error("Could not update the expired quotation.");
+  return { ...record, status: "expired" };
 }
 
 export async function listAdminQuotations(query = ""): Promise<QuotationRecord[]> {
   const mode = integrationMode(serverEnv.supabaseServiceConfigured);
   if (mode === "mock") {
+    const today = new Date().toISOString().slice(0, 10);
+    developmentStore().quotations = developmentStore().quotations.map((quotation) => quotationShouldExpire(quotation, today) ? { ...quotation, status: "expired" } : quotation);
     const normalized = query.trim().toLowerCase();
     return developmentStore().quotations.filter((item) => !normalized || [item.quoteNumber, item.customer.fullName, item.customer.company, item.customer.mobile, item.customer.email, item.customer.projectName].join(" ").toLowerCase().includes(normalized));
   }
   if (mode === "unconfigured") throw new Error("Quotation storage is not configured.");
   const client = getSupabaseServiceClient();
   if (!client) throw new Error("Supabase service client is unavailable.");
+  // This lazy, server-side transition means a quote is never shown as active
+  // after its validity date even when no Admin has opened it that day.
+  const today = new Date().toISOString().slice(0, 10);
+  const { error: expiryError } = await client
+    .from("quotations")
+    .update({ status: "expired" })
+    .lt("valid_until", today)
+    .in("status", ["generated", "sent", "viewed", "follow_up", "revision_requested", "revised"]);
+  if (expiryError) throw new Error("Could not update expired quotations.");
   let request = client.from("quotations").select("*").order("created_at", { ascending: false }).limit(100);
   if (query.trim()) request = request.or(`quote_number.ilike.%${query.trim()}%,customer->>fullName.ilike.%${query.trim()}%,customer->>company.ilike.%${query.trim()}%,customer->>mobile.ilike.%${query.trim()}%,customer->>email.ilike.%${query.trim()}%`);
   const { data, error } = await request;
@@ -379,7 +404,9 @@ export async function listAdminQuotationsForCustomer(customerId: string): Promis
 export async function getAdminQuotation(id: string): Promise<{ quotation: QuotationRecord; notes: QuotationNote[] } | null> {
   const mode = integrationMode(serverEnv.supabaseServiceConfigured);
   if (mode === "mock") {
-    const quotation = developmentStore().quotations.find((item) => item.id === id);
+    const index = developmentStore().quotations.findIndex((item) => item.id === id);
+    if (index >= 0 && quotationShouldExpire(developmentStore().quotations[index])) developmentStore().quotations[index] = { ...developmentStore().quotations[index], status: "expired" };
+    const quotation = index >= 0 ? developmentStore().quotations[index] : undefined;
     return quotation ? { quotation, notes: developmentStore().quotationNotes.filter((note) => note.quotationId === id) } : null;
   }
   if (mode === "unconfigured") throw new Error("Quotation storage is not configured.");
@@ -392,8 +419,14 @@ export async function getAdminQuotation(id: string): Promise<{ quotation: Quotat
   ]);
   if (error || itemError || noteError) throw new Error("Could not load the quotation.");
   if (!quotation) return null;
+  let currentQuotation = quotationFromRow(quotation as Record<string, unknown>, (items || []) as Record<string, unknown>[]);
+  if (quotationShouldExpire(currentQuotation)) {
+    const { error: expiryError } = await client.from("quotations").update({ status: "expired" }).eq("id", currentQuotation.id);
+    if (expiryError) throw new Error("Could not update the expired quotation.");
+    currentQuotation = { ...currentQuotation, status: "expired" };
+  }
   return {
-    quotation: quotationFromRow(quotation as Record<string, unknown>, (items || []) as Record<string, unknown>[]),
+    quotation: currentQuotation,
     notes: (notes || []).map((note) => ({ id: note.id, quotationId: note.quotation_id, note: note.note, createdAt: note.created_at })),
   };
 }
@@ -420,16 +453,18 @@ export async function updateAdminQuotation(id: string, patch: AdminQuotationPatc
     const index = developmentStore().quotations.findIndex((item) => item.id === id);
     if (index < 0) return null;
     const existing = developmentStore().quotations[index];
+    const status = nextQuotationStatusForPatch(existing, patch);
     const quotation: QuotationRecord = {
       ...existing,
       ...patch,
+      ...(status ? { status } : {}),
       followUpAt: patch.followUpAt === undefined ? existing.followUpAt : patch.followUpAt || undefined,
       followUpNote: patch.followUpNote === undefined ? existing.followUpNote : patch.followUpNote || undefined,
       internalNotes: patch.internalNotes === undefined ? existing.internalNotes : patch.internalNotes || undefined,
       lostReason: patch.lostReason === undefined ? existing.lostReason : patch.lostReason || undefined,
       validUntil: patch.validUntil === undefined ? existing.validUntil : patch.validUntil || undefined,
-      lastSentAt: patch.status === "sent" ? now : existing.lastSentAt,
-      lastViewedAt: patch.status === "viewed" ? now : existing.lastViewedAt,
+      lastSentAt: status === "sent" ? now : existing.lastSentAt,
+      lastViewedAt: status === "viewed" ? now : existing.lastViewedAt,
     };
     developmentStore().quotations[index] = quotation;
     return quotation;
@@ -437,15 +472,18 @@ export async function updateAdminQuotation(id: string, patch: AdminQuotationPatc
   if (mode === "unconfigured") throw new Error("Quotation storage is not configured.");
   const client = getSupabaseServiceClient();
   if (!client) throw new Error("Supabase service client is unavailable.");
+  const current = await getAdminQuotation(id);
+  if (!current) return null;
+  const status = nextQuotationStatusForPatch(current.quotation, patch);
   const update = {
-    ...(patch.status ? { status: patch.status } : {}),
+    ...(status ? { status } : {}),
     ...(patch.followUpAt !== undefined ? { follow_up_at: patch.followUpAt || null } : {}),
     ...(patch.followUpNote !== undefined ? { follow_up_note: patch.followUpNote || null } : {}),
     ...(patch.internalNotes !== undefined ? { internal_notes: patch.internalNotes || null } : {}),
     ...(patch.lostReason !== undefined ? { lost_reason: patch.lostReason || null } : {}),
     ...(patch.validUntil !== undefined ? { valid_until: patch.validUntil || null } : {}),
-    ...(patch.status === "sent" ? { last_sent_at: now } : {}),
-    ...(patch.status === "viewed" ? { last_viewed_at: now } : {}),
+    ...(status === "sent" ? { last_sent_at: now } : {}),
+    ...(status === "viewed" ? { last_viewed_at: now } : {}),
   };
   const { data, error } = await client.from("quotations").update(update).eq("id", id).select("*").maybeSingle();
   if (error) throw new Error("Could not update the quotation.");
@@ -454,19 +492,19 @@ export async function updateAdminQuotation(id: string, patch: AdminQuotationPatc
 }
 
 /** Attaches a quotation to its canonical sales records without changing its commercial snapshot. */
-export async function linkQuotationToSales(id: string, links: { customerId: string; projectId?: string; enquiryId?: string }): Promise<QuotationRecord | null> {
+export async function linkQuotationToSales(id: string, links: { customerId: string; accountId?: string; projectId?: string; enquiryId?: string }): Promise<QuotationRecord | null> {
   const mode = integrationMode(serverEnv.supabaseServiceConfigured);
   if (mode === "mock") {
     const index = developmentStore().quotations.findIndex((item) => item.id === id);
     if (index < 0) return null;
-    const quotation = { ...developmentStore().quotations[index], customerId: links.customerId, projectId: links.projectId, enquiryId: links.enquiryId };
+    const quotation = { ...developmentStore().quotations[index], customerId: links.customerId, accountId: links.accountId, projectId: links.projectId, enquiryId: links.enquiryId };
     developmentStore().quotations[index] = quotation;
     return quotation;
   }
   if (mode === "unconfigured") throw new Error("Quotation storage is not configured.");
   const client = getSupabaseServiceClient();
   if (!client) throw new Error("Supabase service client is unavailable.");
-  const { data, error } = await client.from("quotations").update({ customer_id: links.customerId, project_id: links.projectId || null, enquiry_id: links.enquiryId || null }).eq("id", id).select("*").maybeSingle();
+  const { data, error } = await client.from("quotations").update({ customer_id: links.customerId, account_id: links.accountId || null, project_id: links.projectId || null, enquiry_id: links.enquiryId || null }).eq("id", id).select("*").maybeSingle();
   if (error) throw new Error("Could not link the quotation to Sales records.");
   if (!data) return null;
   return (await getAdminQuotation(id))?.quotation || quotationFromRow(data as Record<string, unknown>);

@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { getAdminRequestContext } from "@/lib/auth/admin-server";
-import { createAdminQuotation, listAdminQuotations } from "@/lib/repositories/quotations";
+import { createAdminQuotation, listAdminQuotations, updateAdminQuotation } from "@/lib/repositories/quotations";
 import { adminQuotationCreateSchema } from "@/lib/validation/admin-quotations";
 import { finaliseQuotationSalesLinks, resolveSalesLinks } from "@/lib/repositories/sales-workflow";
 import { priceCustomBuiltUpNbrItem } from "@/lib/quotations/built-up-nbr-pricing";
+import { sendQuotationNotifications } from "@/lib/services/brevo";
 
+// Quotation email delivery creates PDF attachments and must use the Node runtime.
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export async function GET(request: Request) {
@@ -33,8 +36,10 @@ export async function POST(request: Request) {
       internalNotes: parsed.data.internalNotes,
       ...salesLinks,
     });
-    const quotation = await finaliseQuotationSalesLinks(created.quotation, salesLinks);
-    return NextResponse.json({ ok: true, quotation }, { status: 201 });
+    let quotation = await finaliseQuotationSalesLinks(created.quotation, salesLinks);
+    const email = await sendQuotationNotifications(quotation);
+    if (email.delivered) quotation = (await updateAdminQuotation(quotation.id, { status: "sent" })) || quotation;
+    return NextResponse.json({ ok: true, quotation, notification: { emailDelivered: email.delivered, emailMode: email.mode } }, { status: 201 });
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not create the quotation." }, { status: 500 });
   }

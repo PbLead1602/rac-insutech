@@ -11,6 +11,7 @@ import { integrationMode } from "@/lib/env";
 import { serverEnv } from "@/lib/env/server";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { persistentDevelopmentStore } from "@/lib/development/persistent-store";
+import { quotationStatusLabel } from "@/lib/quotations/status";
 
 type RevisionStore = { requests: CustomerRevisionRequest[] };
 function revisionStore() { return persistentDevelopmentStore<RevisionStore>("customer-revision-requests", () => ({ requests: [] })); }
@@ -34,8 +35,7 @@ export function customerEnquiryStatus(status: EnquiryRecord["status"]) {
   return labels[status] || "Under Review";
 }
 export function customerQuoteStatus(status: QuotationRecord["status"]) {
-  const labels: Partial<Record<QuotationRecord["status"], string>> = { generated: "Ready", sent: "Sent", viewed: "Viewed", revision_requested: "Revision Requested", revised: "Revised", accepted: "Accepted", won: "Accepted", lost: "Closed", cancelled: "Closed", expired: "Expired", draft: "Preparing" };
-  return labels[status] || "Ready";
+  return quotationStatusLabel(status);
 }
 
 export async function customerPortalSnapshot(context: CustomerAccountContext): Promise<CustomerPortalSnapshot> {

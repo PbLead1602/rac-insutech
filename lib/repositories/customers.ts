@@ -103,12 +103,15 @@ export async function listAdminCustomers(query = ""): Promise<CustomerRecord[]> 
   const mode = integrationMode(serverEnv.supabaseServiceConfigured);
   if (mode === "mock") {
     const search = query.trim().toLowerCase();
-    return developmentStore().customers.filter((item) => Boolean(item.accountId) && (!search || [item.fullName, item.company, item.phone, item.email, item.gstin, item.city].join(" ").toLowerCase().includes(search)));
+    return developmentStore().customers.filter((item) => !search || [item.fullName, item.company, item.phone, item.email, item.gstin, item.city].join(" ").toLowerCase().includes(search));
   }
   if (mode === "unconfigured") throw new Error("Customer storage is not configured.");
   const client = getSupabaseServiceClient();
   if (!client) throw new Error("Supabase service client is unavailable.");
-  let request = client.from("customers").select("*").not("account_id", "is", null).order("created_at", { ascending: false }).limit(100);
+  // The master customer register also includes contacts created by an Admin
+  // quotation. A portal account is optional and must never be auto-created
+  // without the customer's registration and email verification.
+  let request = client.from("customers").select("*").order("created_at", { ascending: false }).limit(100);
   if (query.trim()) request = request.or(`full_name.ilike.%${query.trim()}%,company.ilike.%${query.trim()}%,phone.ilike.%${query.trim()}%,email.ilike.%${query.trim()}%,gstin.ilike.%${query.trim()}%,city.ilike.%${query.trim()}%`);
   const { data, error } = await request;
   if (error) throw new Error("Could not load customers.");

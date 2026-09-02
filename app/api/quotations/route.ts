@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createQuotation } from "@/lib/repositories/quotations";
+import { createQuotation, updateAdminQuotation } from "@/lib/repositories/quotations";
 import { sendQuotationNotifications } from "@/lib/services/brevo";
 import { verifyTurnstile } from "@/lib/services/turnstile";
 import { serverEnv } from "@/lib/env/server";
@@ -83,8 +83,12 @@ export async function POST(request: Request) {
       enquiryId: salesLinks.enquiryId,
       source: salesLinks.enquiryId ? "enquiry_converted" : "website_auto_quote",
     });
-    const quotation = await finaliseQuotationSalesLinks(createdQuotation, salesLinks);
+    let quotation = await finaliseQuotationSalesLinks(createdQuotation, salesLinks);
     const email = await sendQuotationNotifications(quotation);
+    // A quote is generated first; it becomes Sent only when Brevo accepts the
+    // customer-only email. The status is therefore operationally truthful in
+    // both the Admin panel and the customer portal.
+    if (email.delivered) quotation = (await updateAdminQuotation(quotation.id, { status: "sent" })) || quotation;
 
     return NextResponse.json({
       ok: true,
@@ -92,7 +96,9 @@ export async function POST(request: Request) {
         id: quotation.id,
         quoteNumber: quotation.quoteNumber,
         accessToken: quotation.accessToken,
+        status: quotation.status,
       },
+      notification: { emailDelivered: email.delivered, emailMode: email.mode },
       integrations: { storage: storageMode, email: email.mode, captcha: verification.mode },
     });
   } catch (error) {

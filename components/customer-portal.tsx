@@ -11,6 +11,7 @@ import { readQuoteLeadDraft } from "@/lib/quotation-draft";
 import { getCustomerSupabaseBrowserClient } from "@/lib/supabase/client";
 import { previewEntries } from "@/components/admin-change-confirmation-guard";
 import type { CustomerAccount, CustomerRecord, CustomerRevisionRequest, DocumentRecord, EnquiryRecord, ProjectRecord, QuotationRecord } from "@/lib/db/types";
+import { quotationStatusLabel } from "@/lib/quotations/status";
 
 type PortalResponse = { ok?: boolean; message?: string; account?: CustomerAccount; customer?: CustomerRecord; enquiries?: EnquiryRecord[]; quotations?: QuotationRecord[]; projects?: ProjectRecord[]; documents?: DocumentRecord[]; revisionRequests?: CustomerRevisionRequest[]; access?: "allowed" | "restricted" };
 
@@ -18,7 +19,7 @@ function intentUrl(path: string, intent?: string | null) { return intent ? `${pa
 function errorMessage(data: PortalResponse, fallback: string) { return data.message || fallback; }
 function statusLabel(status?: CustomerAccount["status"]) { return (status || "pending_email_verification").replaceAll("_", " "); }
 function enquiryStatus(status: EnquiryRecord["status"]) { return ({ new: "Received", contacted: "Under Review", qualified: "Under Review", requirement_received: "Received", quotation_required: "Under Review", quoted: "Quotation Prepared", quotation_sent: "Quotation Created", converted: "Quotation Created", won: "Closed", lost: "Closed", not_relevant: "Closed", closed: "Closed" } as Partial<Record<EnquiryRecord["status"], string>>)[status] || "Under Review"; }
-function quotationStatus(status: QuotationRecord["status"]) { return ({ generated: "Ready", sent: "Sent", viewed: "Viewed", revision_requested: "Revision Requested", revised: "Revised", accepted: "Accepted", won: "Accepted", lost: "Closed", cancelled: "Closed", expired: "Expired", draft: "Preparing" } as Partial<Record<QuotationRecord["status"], string>>)[status] || "Ready"; }
+function quotationStatus(status: QuotationRecord["status"]) { return quotationStatusLabel(status); }
 function money(value: number) { return `₹${value.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 
 async function loadPortal(): Promise<PortalResponse> {

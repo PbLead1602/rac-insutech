@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit --project tsconfig.typecheck.json",
     "test:built-up-nbr": "tsx scripts/test-built-up-nbr.ts",
+    "test:quotation-status": "tsx scripts/test-quotation-status.ts",
     "generate:pdf-logo": "node scripts/generate-pdf-logo.mjs",
     "verify:pdf-logo": "node scripts/verify-pdf-logo.mjs",
     "verify:pdf-security": "node scripts/verify-pdf-security.mjs",

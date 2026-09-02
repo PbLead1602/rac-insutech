@@ -8,6 +8,8 @@ import { linkQuotationToSales } from "@/lib/repositories/quotations";
 
 export type SalesLinks = {
   customerId: string;
+  /** Present only when the matched customer already has a RAC portal account. */
+  accountId?: string;
   projectId?: string;
   enquiryId?: string;
 };
@@ -28,7 +30,7 @@ export async function resolveSalesLinks(
     force: options.forceProject,
     fallbackTitle: options.fallbackProjectTitle,
   });
-  return { customerId: customerResult.customer.id, projectId: projectResult?.project.id, enquiryId: options.enquiryId };
+  return { customerId: customerResult.customer.id, accountId: customerResult.customer.accountId, projectId: projectResult?.project.id, enquiryId: options.enquiryId };
 }
 
 /** Persists the relationships after the quotation itself has been created. */
