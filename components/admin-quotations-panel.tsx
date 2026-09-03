@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { ArrowRight, CalendarClock, Check, Copy, ExternalLink, FileDown, FileText, Mail, MapPin, MessageSquarePlus, PencilLine, Phone, Plus, Search, Trash2, X } from "lucide-react";
 import { adminFetch } from "@/lib/auth/admin-client";
 import type { QuotationNote, QuotationRecord } from "@/lib/db/types";
@@ -24,6 +25,7 @@ function AdminBuiltUpNbrBreakdown({ item }: { item: QuotationRecord["items"][num
 }
 
 export default function AdminQuotationsPanel() {
+  const searchParams = useSearchParams();
   const [records, setRecords] = useState<QuotationRecord[]>([]);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
@@ -49,12 +51,19 @@ export default function AdminQuotationsPanel() {
     return matchStatus && value.includes(query.toLowerCase());
   }), [records, query, status]);
 
-  const open = async (id: string) => {
+  const open = useCallback(async (id: string) => {
     const response = await adminFetch(`/api/admin/quotations/${id}`);
     const data = await response.json() as { quotation?: QuotationRecord; notes?: QuotationNote[]; message?: string };
     if (!response.ok || !data.quotation) { setMessage(data.message || "Could not open this quotation."); return; }
     setSelected({ quotation: data.quotation, notes: data.notes || [] });
-  };
+  }, []);
+
+  useEffect(() => {
+    const quotationId = searchParams.get("quotation");
+    if (!quotationId) return;
+    const timer = window.setTimeout(() => { void open(quotationId); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [open, searchParams]);
 
   const applyUpdate = async (patch: Record<string, string>) => {
     if (!selected) return;

@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import { createQuotation, updateAdminQuotation } from "@/lib/repositories/quotations";
-import { sendQuotationNotifications } from "@/lib/services/brevo";
+import { createQuotation } from "@/lib/repositories/quotations";
 import { verifyTurnstile } from "@/lib/services/turnstile";
 import { serverEnv } from "@/lib/env/server";
 import { calculateQuoteLine } from "@/lib/quotations/catalogue";
 import { getServerPricedVariant } from "@/lib/quotations/pricing";
 import { priceCustomBuiltUpNbrItem } from "@/lib/quotations/built-up-nbr-pricing";
 import { quotationSubmissionSchema } from "@/lib/validation/quotation";
-import { finaliseQuotationSalesLinks, resolveSalesLinks } from "@/lib/repositories/sales-workflow";
+import { createQuotationEnquiry, finaliseQuotationSalesLinks, resolveSalesLinks } from "@/lib/repositories/sales-workflow";
 import { customerAccessFailure, getCustomerRequestContext } from "@/lib/auth/customer-server";
 import { ensureEnquiryBelongsToCustomerAccount } from "@/lib/repositories/customer-accounts";
 
@@ -66,10 +65,18 @@ export async function POST(request: Request) {
       gstin: customerContext.customer.gstin || customerContext.account.gstin || "",
       customerType: customerContext.account.customerType,
     };
-    const salesLinks = await resolveSalesLinks(customer, { enquiryId: sourceEnquiry?.id });
+    const salesLinks = await resolveSalesLinks(customer);
     if (salesLinks.customerId !== customerContext.customer.id) {
       return NextResponse.json({ ok: false, message: "Your customer profile could not be matched safely. Please contact RAC." }, { status: 409 });
     }
+    // A quotation always has an enquiry history. Reuse the RFQ that opened
+    // this builder, otherwise create a customer-owned quotation enquiry.
+    const enquiry = sourceEnquiry || await createQuotationEnquiry(customer, salesLinks, {
+      product: itemResults.map((item) => item.productName).filter(Boolean).join(", ").slice(0, 500),
+      quantity: `${itemResults.length} quotation line${itemResults.length === 1 ? "" : "s"}`,
+      source: "customer",
+    });
+    salesLinks.enquiryId = enquiry.id;
     const { quotation: createdQuotation, mode: storageMode } = await createQuotation({
       customer,
       items: itemResults,
@@ -81,14 +88,9 @@ export async function POST(request: Request) {
       accountId: customerContext.account.id,
       projectId: salesLinks.projectId,
       enquiryId: salesLinks.enquiryId,
-      source: salesLinks.enquiryId ? "enquiry_converted" : "website_auto_quote",
+      source: sourceEnquiry ? "enquiry_converted" : "website_auto_quote",
     });
-    let quotation = await finaliseQuotationSalesLinks(createdQuotation, salesLinks);
-    const email = await sendQuotationNotifications(quotation);
-    // A quote is generated first; it becomes Sent only when Brevo accepts the
-    // customer-only email. The status is therefore operationally truthful in
-    // both the Admin panel and the customer portal.
-    if (email.delivered) quotation = (await updateAdminQuotation(quotation.id, { status: "sent" })) || quotation;
+    const quotation = await finaliseQuotationSalesLinks(createdQuotation, salesLinks);
 
     return NextResponse.json({
       ok: true,
@@ -98,8 +100,8 @@ export async function POST(request: Request) {
         accessToken: quotation.accessToken,
         status: quotation.status,
       },
-      notification: { emailDelivered: email.delivered, emailMode: email.mode },
-      integrations: { storage: storageMode, email: email.mode, captcha: verification.mode },
+      notification: { emailDelivered: false, emailMode: "awaiting_customer_confirmation" },
+      integrations: { storage: storageMode, captcha: verification.mode },
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "We could not generate this quotation.";

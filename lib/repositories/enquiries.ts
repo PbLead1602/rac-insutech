@@ -203,8 +203,8 @@ export async function updateAdminEnquiry(id: string, patch: AdminEnquiryPatch): 
 }
 
 /** Links a captured enquiry to the customer and project created for its quotation. */
-export async function linkEnquiryToSales(id: string, customerId: string, projectId?: string): Promise<EnquiryRecord | null> {
-  return updateAdminEnquiry(id, { customerId, projectId: projectId || "", status: "quotation_sent" });
+export async function linkEnquiryToSales(id: string, customerId: string, projectId?: string, status: EnquiryStatus = "quoted"): Promise<EnquiryRecord | null> {
+  return updateAdminEnquiry(id, { customerId, projectId: projectId || "", status });
 }
 
 /** Links a public enquiry to a registered account before that account is approved. */

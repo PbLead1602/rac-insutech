@@ -392,6 +392,10 @@ function GenerateQuotationWorkspace() {
   const submitQuotation = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!customer) return;
+    if (!customer.projectName.trim() || !customer.projectLocation.trim()) {
+      setMessageTone("error");
+      return setMessage("Enter the project name and project location before generating the quotation.");
+    }
     const invalidRow = rowCalculations.find((entry) => entry.error);
     const invalidBuiltUpItem = customBuiltUpEntries.find((entry) => entry.error || entry.calculation?.basicAmount === undefined);
     if (invalidRow || invalidBuiltUpItem || (!configuredLines.length && !customBuiltUpItems.length)) {
@@ -410,10 +414,10 @@ function GenerateQuotationWorkspace() {
           turnstileToken,
         }),
       });
-      const result = await response.json() as { ok: boolean; message?: string; quotation?: { id: string; accessToken: string }; notification?: { emailDelivered?: boolean } };
+      const result = await response.json() as { ok: boolean; message?: string; quotation?: { id: string; accessToken: string } };
       if (!response.ok || !result.ok || !result.quotation) throw new Error(result.message || "We could not generate the quotation.");
       clearQuoteLeadDraft();
-      router.push(`/quotation/success/${result.quotation.id}?token=${encodeURIComponent(result.quotation.accessToken)}&email=${result.notification?.emailDelivered ? "sent" : "pending"}`);
+      router.push(`/quotation/success/${result.quotation.id}?token=${encodeURIComponent(result.quotation.accessToken)}`);
     } catch (error) {
       setMessageTone("error");
       setMessage(error instanceof Error ? error.message : "We could not generate the quotation.");
@@ -503,7 +507,7 @@ function GenerateQuotationWorkspace() {
         <div className="quotation-form-grid customer-fields">
           <label>Full name<input required value={customer.fullName} readOnly aria-readonly="true" /></label><label>Company<input required value={customer.company} readOnly aria-readonly="true" /></label>
           <label>Mobile<input required type="tel" value={customer.mobile} readOnly aria-readonly="true" /></label><label>Email<input required type="email" value={customer.email} readOnly aria-readonly="true" /></label>
-          <label>Project name<input value={customer.projectName} onChange={(event) => updateCustomer("projectName", event.target.value)} placeholder="Optional" /></label><label>Project location<input value={customer.projectLocation} onChange={(event) => updateCustomer("projectLocation", event.target.value)} placeholder="Optional" /></label>
+          <label>Project name<input required value={customer.projectName} onChange={(event) => updateCustomer("projectName", event.target.value)} placeholder="Required" /></label><label>Project location<input required value={customer.projectLocation} onChange={(event) => updateCustomer("projectLocation", event.target.value)} placeholder="Required" /></label>
           <label>City<input value={customer.city} onChange={(event) => updateCustomer("city", event.target.value)} placeholder="Optional" /></label><label>State<input value={customer.state || ""} onChange={(event) => updateCustomer("state", event.target.value)} placeholder="Optional" /></label>
           <label>PIN code<input value={customer.pinCode} onChange={(event) => updateCustomer("pinCode", event.target.value)} placeholder="Optional" /></label><label>GSTIN<input value={customer.gstin} readOnly aria-readonly="true" /></label>
           <label>Customer type<select value={customer.customerType} disabled><option value="end_user">End user</option><option value="contractor">Contractor</option><option value="consultant">Consultant</option><option value="dealer">Dealer</option><option value="other">Other</option></select></label>

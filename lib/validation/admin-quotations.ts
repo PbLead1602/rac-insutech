@@ -48,6 +48,8 @@ export const adminQuotationRevisionSchema = z.object({
 }).refine((value) => value.items.length + value.customBuiltUpItems.length > 0, { message: "Keep at least one quotation line." });
 
 export const adminQuotationCreateSchema = z.object({
+  /** A Customer Record selected from Customer Record & Analysis. */
+  customerId: z.string().uuid().optional(),
   customer: quotationCustomerSchema,
   items: z.array(revisionItemSchema).max(100).default([]),
   customBuiltUpItems: z.array(adminBuiltUpNbrSelectionSchema).max(25).default([]),

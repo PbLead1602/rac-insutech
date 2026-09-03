@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAdminRequestContext } from "@/lib/auth/admin-server";
 import { getAdminQuotation, updateAdminQuotation } from "@/lib/repositories/quotations";
+import { markQuotationSalesEmailSent } from "@/lib/repositories/sales-workflow";
 import { sendQuotationNotifications } from "@/lib/services/brevo";
 
 // The notification service produces the attached PDF as a Node Buffer.
@@ -21,6 +22,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return NextResponse.json({ ok: false, message: email.error || "The quotation email could not be sent. Its current status has not changed." }, { status: 502 });
     }
     const quotation = await updateAdminQuotation(detail.quotation.id, { status: "sent" });
+    if (quotation) await markQuotationSalesEmailSent(quotation);
     return quotation
       ? NextResponse.json({ ok: true, quotation, notification: { emailDelivered: true, emailMode: email.mode } })
       : NextResponse.json({ ok: false, message: "Quotation could not be updated after email delivery." }, { status: 500 });
