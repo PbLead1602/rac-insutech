@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Plus, Trash2 } from "lucide-react";
 import { adminFetch } from "@/lib/auth/admin-client";
 import { BuiltUpNbrConfigurator, type CustomBuiltUpNbrDraft } from "@/components/built-up-nbr-configurator";
-import type { CustomerAccount, CustomerRecord, EnquiryRecord, QuotationRecord } from "@/lib/db/types";
+import type { CustomerRecord, EnquiryRecord, QuotationRecord } from "@/lib/db/types";
 import { calculateQuoteLine, findQuoteVariant, getQuotationVariant, quotationProducts, quotationVariants, quoteOptions, type CalculatedQuoteLine, type QuoteOrderUnit, type QuoteProductId, type QuoteVariant } from "@/lib/quotations/catalogue";
 import { calculateBuiltUpCylinderInsulation, thicknessMmFromRateCardLabel } from "@/lib/quotations/built-up-nbr";
 
@@ -165,17 +165,12 @@ export default function AdminQuotationCreatePanel() {
       setRegisteredCustomersLoading(true);
       setRegisteredCustomersError("");
       try {
-        const [customerResponse, accountResponse] = await Promise.all([
-          adminFetch("/api/admin/customers", { cache: "no-store", signal: controller.signal }),
-          adminFetch("/api/admin/customer-accounts?status=active", { cache: "no-store", signal: controller.signal }),
-        ]);
+        const customerResponse = await adminFetch("/api/admin/customers", { cache: "no-store", signal: controller.signal });
         const customerData = await customerResponse.json() as { customers?: CustomerRecord[]; message?: string };
-        const accountData = await accountResponse.json() as { accounts?: CustomerAccount[]; message?: string };
-        if (!customerResponse.ok || !accountResponse.ok) throw new Error(customerData.message || accountData.message || "Could not load registered customers.");
-        const activeAccountIds = new Set((accountData.accounts || []).map((account) => account.id));
-        setRegisteredCustomers((customerData.customers || []).filter((customer) => customer.status === "active" && Boolean(customer.accountId) && activeAccountIds.has(customer.accountId!)));
+        if (!customerResponse.ok) throw new Error(customerData.message || "Could not load customer records.");
+        setRegisteredCustomers((customerData.customers || []).filter((customer) => customer.status === "active"));
       } catch (issue) {
-        if (!controller.signal.aborted) setRegisteredCustomersError(issue instanceof Error ? issue.message : "Could not load registered customers.");
+        if (!controller.signal.aborted) setRegisteredCustomersError(issue instanceof Error ? issue.message : "Could not load customer records.");
       } finally {
         if (!controller.signal.aborted) setRegisteredCustomersLoading(false);
       }
@@ -328,7 +323,7 @@ export default function AdminQuotationCreatePanel() {
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (customerLoading || (customerMode === "registered" && !registeredCustomerSelected)) { setError("Select an active registered customer before creating the quotation."); return; }
+    if (customerLoading || (customerMode === "registered" && !registeredCustomerSelected)) { setError("Select an active customer record before creating the quotation."); return; }
     const invalidRow = rowCalculations.find((entry) => entry.error);
     if (invalidRow || (!configuredLines.length && !customBuiltUpItems.length)) { setError(invalidRow?.error || "Use Multiple selection or Custom Built-Up NBR to add at least one product configuration."); return; }
     const form = new FormData(event.currentTarget);
@@ -353,9 +348,9 @@ export default function AdminQuotationCreatePanel() {
     {customerId && customerLoading && <p className="admin-records-message">Loading the selected Customer Record…</p>}
     <form className="admin-customer-fields admin-os-card admin-manual-quotation" onSubmit={submit} key={`${customerMode}-${selectedCustomer?.id || enquiry?.id || "manual-quotation"}`}>
       <div className="admin-customer-fields-grid admin-manual-customer-details">
-        <div className="admin-manual-section-heading"><p>Customer &amp; project details</p><h3>{customerMode === "registered" ? registeredCustomerSelected ? "Set the project for this customer." : "Select the quotation recipient." : "Confirm the quotation recipient."}</h3><span>{customerMode === "registered" ? "Select an active registered customer to securely autofill their record. Enter the project name and project location for this quotation." : "Use this option only for a new customer. Their contact details will be added to the RAC customer register when the quotation is created."}</span></div>
-        <fieldset className="admin-recipient-mode"><legend>Quotation recipient</legend><div><label><input type="radio" name="customerRecipientMode" checked={customerMode === "registered"} onChange={() => chooseRecipientMode("registered")} /> Existing registered customer</label><label><input type="radio" name="customerRecipientMode" checked={customerMode === "new"} onChange={() => chooseRecipientMode("new")} /> New customer</label></div></fieldset>
-        {customerMode === "registered" && <div className="admin-registered-customer-selector"><div><label>Company name<select value={recipientCompany} disabled={registeredCustomersLoading || !registeredCompanies.length} onChange={(event) => chooseRegisteredCompany(event.target.value)}><option value="">{registeredCustomersLoading ? "Loading registered companies…" : "Select company"}</option>{registeredCompanies.map((company) => <option value={company} key={company}>{company}</option>)}</select></label><label>Customer name<select value={recipientCustomerId} disabled={!recipientCompany || registeredCustomersLoading} onChange={(event) => chooseRegisteredCustomer(event.target.value)}><option value="">Select customer</option>{companyCustomers.map((customer) => <option value={customer.id} key={customer.id}>{customer.fullName}{customer.phone ? ` · ${customer.phone}` : customer.email ? ` · ${customer.email}` : ""}</option>)}</select></label></div>{registeredCustomersLoading && <p>Loading active registered customers…</p>}{registeredCustomersError && <p className="admin-form-error">{registeredCustomersError}</p>}{!registeredCustomersLoading && !registeredCustomersError && !registeredCustomers.length && <p>No active registered customer accounts are available. Choose New customer to enter the details manually.</p>}{registeredCustomerSelected && <p className="admin-registered-customer-confirmation">Customer record selected and linked to this quotation.</p>}</div>}
+        <div className="admin-manual-section-heading"><p>Customer &amp; project details</p><h3>{customerMode === "registered" ? registeredCustomerSelected ? "Set the project for this customer." : "Select the quotation recipient." : "Confirm the quotation recipient."}</h3><span>{customerMode === "registered" ? "Customer Record & Analysis is checked first. Select an active customer record to securely autofill the profile, then enter the project name and project location for this quotation." : "Use this option only when no suitable customer record exists. Their contact details will be added to Customer Record & Analysis when the quotation is created."}</span></div>
+        <fieldset className="admin-recipient-mode"><legend>Quotation recipient</legend><div><label><input type="radio" name="customerRecipientMode" checked={customerMode === "registered"} onChange={() => chooseRecipientMode("registered")} /> Existing customer record</label><label><input type="radio" name="customerRecipientMode" checked={customerMode === "new"} onChange={() => chooseRecipientMode("new")} /> New customer</label></div></fieldset>
+        {customerMode === "registered" && <div className="admin-registered-customer-selector"><div><label>Company name<select value={recipientCompany} disabled={registeredCustomersLoading || !registeredCompanies.length} onChange={(event) => chooseRegisteredCompany(event.target.value)}><option value="">{registeredCustomersLoading ? "Loading customer records…" : "Select company"}</option>{registeredCompanies.map((company) => <option value={company} key={company}>{company}</option>)}</select></label><label>Customer name<select value={recipientCustomerId} disabled={!recipientCompany || registeredCustomersLoading} onChange={(event) => chooseRegisteredCustomer(event.target.value)}><option value="">Select customer</option>{companyCustomers.map((customer) => <option value={customer.id} key={customer.id}>{customer.fullName}{customer.phone ? ` · ${customer.phone}` : customer.email ? ` · ${customer.email}` : ""}</option>)}</select></label></div>{registeredCustomersLoading && <p>Checking active customer records…</p>}{registeredCustomersError && <p className="admin-form-error">{registeredCustomersError}</p>}{!registeredCustomersLoading && !registeredCustomersError && !registeredCustomers.length && <p>No active customer records are available. Choose New customer to enter the details manually.</p>}{registeredCustomerSelected && <p className="admin-registered-customer-confirmation">Customer record found, autofilled, and linked to this quotation.</p>}</div>}
         <label>Full name<input name="fullName" required autoFocus={customerMode === "new"} readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.fullName} /></label>
         <label>Company<input name="company" required readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.company} /></label>
         <label>Mobile number<input name="mobile" required inputMode="tel" readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.mobile} /></label>

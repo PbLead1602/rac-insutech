@@ -635,7 +635,7 @@ section[id], article[id] { scroll-margin-top: 108px; }
 .admin-manual-quotation > .admin-records-message { order: 8; }
 .admin-manual-quotation > .admin-customer-form-actions { order: 9; }
 
-/* Recipient selection keeps approved account data separate from manual entry. */
+/* Recipient selection keeps Customer Record & Analysis data separate from manual entry. */
 .admin-manual-quotation .admin-recipient-mode { grid-column: 1 / -1; min-width: 0; margin: 0; padding: 13px 15px 15px; border: 1px solid #cfe3ef; border-radius: 11px; background: linear-gradient(110deg,#f5fbff,#f6fcfa); }
 .admin-manual-quotation .admin-recipient-mode legend { padding: 0 5px; color: #1d4d78; font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .admin-manual-quotation .admin-recipient-mode > div { display: flex; flex-wrap: wrap; gap: 10px; }
