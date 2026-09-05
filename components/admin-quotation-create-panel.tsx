@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Plus, Trash2 } from "lucide-react";
 import { adminFetch } from "@/lib/auth/admin-client";
 import { BuiltUpNbrConfigurator, type CustomBuiltUpNbrDraft } from "@/components/built-up-nbr-configurator";
-import type { CustomerRecord, EnquiryRecord, QuotationRecord } from "@/lib/db/types";
+import type { CustomerAccount, CustomerRecord, EnquiryRecord, QuotationRecord } from "@/lib/db/types";
 import { calculateQuoteLine, findQuoteVariant, getQuotationVariant, quotationProducts, quotationVariants, quoteOptions, type CalculatedQuoteLine, type QuoteOrderUnit, type QuoteProductId, type QuoteVariant } from "@/lib/quotations/catalogue";
 import { calculateBuiltUpCylinderInsulation, thicknessMmFromRateCardLabel } from "@/lib/quotations/built-up-nbr";
 
@@ -14,6 +14,7 @@ type Configuration = Pick<QuoteVariant, "materialClass" | "thickness" | "size" |
 type ConfigurationRow = { id: string; productId: QuoteProductId; configuration: Configuration; quantity: string; orderUnit: QuoteOrderUnit; rateOverride?: number };
 type RowCalculation = { row: ConfigurationRow; variant?: QuoteVariant; line?: CalculatedQuoteLine; error?: string };
 type AdminCustomBuiltUpDraft = CustomBuiltUpNbrDraft & { overrideAmount?: number; overrideReason?: string };
+type CustomerRecipientMode = "registered" | "new";
 
 const currency = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -98,6 +99,10 @@ function quotationCustomerTypeForRecord(type: CustomerRecord["customerType"]) {
   return "other";
 }
 
+function registeredCustomerCompany(customer: CustomerRecord) {
+  return customer.company?.trim() || "Individual customer";
+}
+
 export default function AdminQuotationCreatePanel() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -115,6 +120,12 @@ export default function AdminQuotationCreatePanel() {
   const customerId = searchParams.get("customer");
   const [enquiry, setEnquiry] = useState<EnquiryRecord | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<CustomerRecord | null>(null);
+  const [customerMode, setCustomerMode] = useState<CustomerRecipientMode>(() => customerId ? "registered" : "new");
+  const [registeredCustomers, setRegisteredCustomers] = useState<CustomerRecord[]>([]);
+  const [registeredCustomersLoading, setRegisteredCustomersLoading] = useState(false);
+  const [registeredCustomersError, setRegisteredCustomersError] = useState("");
+  const [selectedCompany, setSelectedCompany] = useState("");
+  const [selectedRegisteredCustomerId, setSelectedRegisteredCustomerId] = useState(customerId || "");
   const [customerLoading, setCustomerLoading] = useState(Boolean(customerId));
 
   useEffect(() => {
@@ -133,7 +144,7 @@ export default function AdminQuotationCreatePanel() {
   }, [enquiryId]);
 
   useEffect(() => {
-    if (!customerId) return;
+    if (!customerId || customerMode !== "registered") return;
     const controller = new AbortController();
     const load = async () => {
       setCustomerLoading(true);
@@ -141,11 +152,37 @@ export default function AdminQuotationCreatePanel() {
       const data = await response.json() as { customer?: CustomerRecord; message?: string };
       if (!response.ok || !data.customer) { setError(data.message || "Could not load the selected customer record."); setCustomerLoading(false); return; }
       setSelectedCustomer(data.customer);
+      setSelectedRegisteredCustomerId(data.customer.id);
       setCustomerLoading(false);
     };
     void load();
     return () => controller.abort();
-  }, [customerId]);
+  }, [customerId, customerMode]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadRegisteredCustomers = async () => {
+      setRegisteredCustomersLoading(true);
+      setRegisteredCustomersError("");
+      try {
+        const [customerResponse, accountResponse] = await Promise.all([
+          adminFetch("/api/admin/customers", { cache: "no-store", signal: controller.signal }),
+          adminFetch("/api/admin/customer-accounts?status=active", { cache: "no-store", signal: controller.signal }),
+        ]);
+        const customerData = await customerResponse.json() as { customers?: CustomerRecord[]; message?: string };
+        const accountData = await accountResponse.json() as { accounts?: CustomerAccount[]; message?: string };
+        if (!customerResponse.ok || !accountResponse.ok) throw new Error(customerData.message || accountData.message || "Could not load registered customers.");
+        const activeAccountIds = new Set((accountData.accounts || []).map((account) => account.id));
+        setRegisteredCustomers((customerData.customers || []).filter((customer) => customer.status === "active" && Boolean(customer.accountId) && activeAccountIds.has(customer.accountId!)));
+      } catch (issue) {
+        if (!controller.signal.aborted) setRegisteredCustomersError(issue instanceof Error ? issue.message : "Could not load registered customers.");
+      } finally {
+        if (!controller.signal.aborted) setRegisteredCustomersLoading(false);
+      }
+    };
+    void loadRegisteredCustomers();
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -253,14 +290,50 @@ export default function AdminQuotationCreatePanel() {
     setConfigurationRows((current) => current.filter((row) => row.id !== rowId));
   };
 
+  const registeredCompanies = useMemo(() => [...new Set(registeredCustomers.map(registeredCustomerCompany))].sort((left, right) => left.localeCompare(right)), [registeredCustomers]);
+  const linkedRegisteredCustomer = selectedCustomer ? registeredCustomers.find((customer) => customer.id === selectedCustomer.id) : undefined;
+  const recipientCompany = selectedCompany || (linkedRegisteredCustomer ? registeredCustomerCompany(linkedRegisteredCustomer) : "");
+  const recipientCustomerId = selectedRegisteredCustomerId || linkedRegisteredCustomer?.id || "";
+  const companyCustomers = useMemo(() => registeredCustomers.filter((customer) => registeredCustomerCompany(customer) === recipientCompany).sort((left, right) => left.fullName.localeCompare(right.fullName)), [recipientCompany, registeredCustomers]);
+
+  const chooseRecipientMode = (mode: CustomerRecipientMode) => {
+    setCustomerMode(mode);
+    setError("");
+    if (mode === "new") {
+      setCustomerLoading(false);
+      setSelectedCustomer(null);
+      setSelectedCompany("");
+      setSelectedRegisteredCustomerId("");
+      return;
+    }
+    if (!customerId) {
+      setSelectedCustomer(null);
+      setSelectedCompany("");
+      setSelectedRegisteredCustomerId("");
+    }
+  };
+
+  const chooseRegisteredCompany = (company: string) => {
+    setError("");
+    setSelectedCompany(company);
+    setSelectedRegisteredCustomerId("");
+    setSelectedCustomer(null);
+  };
+
+  const chooseRegisteredCustomer = (id: string) => {
+    setError("");
+    setSelectedRegisteredCustomerId(id);
+    setSelectedCustomer(registeredCustomers.find((customer) => customer.id === id) || null);
+  };
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (customerLoading || (customerId && !selectedCustomer)) { setError("Wait for the selected customer record to load before creating the quotation."); return; }
+    if (customerLoading || (customerMode === "registered" && !registeredCustomerSelected)) { setError("Select an active registered customer before creating the quotation."); return; }
     const invalidRow = rowCalculations.find((entry) => entry.error);
     if (invalidRow || (!configuredLines.length && !customBuiltUpItems.length)) { setError(invalidRow?.error || "Use Multiple selection or Custom Built-Up NBR to add at least one product configuration."); return; }
     const form = new FormData(event.currentTarget);
     const customer = Object.fromEntries(["fullName", "company", "mobile", "email", "gstin", "projectName", "projectLocation", "city", "pinCode", "customerType", "deliveryPreference", "notes"].map((field) => [field, String(form.get(field) || "")]));
-    const payload = { customerId: selectedCustomer?.id, customer, items: configuredLines.map(({ amount: _amount, provisional: _provisional, ...line }) => line), customBuiltUpItems: customBuiltUpItems.map(({ id: _id, ...item }) => item), gstRate, enquiryId: enquiryId || undefined, validUntil: String(form.get("validUntil") || ""), internalNotes: String(form.get("internalNotes") || "") };
+    const payload = { customerId: customerMode === "registered" && registeredCustomerSelected ? selectedCustomer?.id : undefined, customer, items: configuredLines.map(({ amount: _amount, provisional: _provisional, ...line }) => line), customBuiltUpItems: customBuiltUpItems.map(({ id: _id, ...item }) => item), gstRate, enquiryId: enquiryId || undefined, validUntil: String(form.get("validUntil") || ""), internalNotes: String(form.get("internalNotes") || "") };
     setBusy(true); setError("");
     try {
       const response = await adminFetch("/api/admin/quotations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -272,25 +345,28 @@ export default function AdminQuotationCreatePanel() {
   };
 
   const prefilledCustomer = selectedCustomer ? { fullName: selectedCustomer.fullName, company: selectedCustomer.company || selectedCustomer.fullName, mobile: selectedCustomer.phone, email: selectedCustomer.email, gstin: selectedCustomer.gstin, projectName: enquiry?.projectName || "", projectLocation: enquiry?.projectLocation || "", city: selectedCustomer.city, pinCode: selectedCustomer.pinCode, customerType: quotationCustomerTypeForRecord(selectedCustomer.customerType), deliveryPreference: "" } : enquiry ? { fullName: enquiry.name, company: enquiry.company, mobile: enquiry.mobile, email: enquiry.email, gstin: "", projectName: enquiry.projectName, projectLocation: enquiry.projectLocation, city: enquiry.city, pinCode: enquiry.pinCode, customerType: enquiry.customerType || "end_user", deliveryPreference: enquiry.deliveryPreference } : null;
-  const customerIsLocked = Boolean(selectedCustomer);
+  const customerDetailsLocked = customerMode === "registered";
+  const registeredCustomerSelected = customerMode === "registered" && Boolean(linkedRegisteredCustomer);
   return <div className="admin-os-content">
     <section className="admin-os-module-intro admin-manual-quotation-hero"><div><p>MANUAL QUOTATION BUILDER</p><h2>Configure material. Generate a clear quote.</h2><span>Use approved product combinations. Customer, price and status details are saved as an immutable quotation snapshot.</span></div><button type="button" onClick={() => router.push("/admin/quotations")}>Back to quotations</button></section>
     {enquiryId && <p className="admin-records-message">Creating a quotation from enquiry {enquiryId.slice(0, 8)}. Confirm the prefilled customer and project information before saving.</p>}
     {customerId && customerLoading && <p className="admin-records-message">Loading the selected Customer Record…</p>}
-    <form className="admin-customer-fields admin-os-card admin-manual-quotation" onSubmit={submit} key={selectedCustomer?.id || enquiry?.id || "manual-quotation"}>
+    <form className="admin-customer-fields admin-os-card admin-manual-quotation" onSubmit={submit} key={`${customerMode}-${selectedCustomer?.id || enquiry?.id || "manual-quotation"}`}>
       <div className="admin-customer-fields-grid admin-manual-customer-details">
-        <div className="admin-manual-section-heading"><p>Customer &amp; project details</p><h3>{customerIsLocked ? "Set the project for this customer." : "Confirm the quotation recipient."}</h3><span>{customerIsLocked ? "Customer information is securely fetched from Customer Record & Analysis. Enter the project name and project location for this quotation." : "For an existing RAC customer, the quotation is linked to that customer account. A new contact is added to the RAC customer register without creating login credentials."}</span></div>
-        <label>Full name<input name="fullName" required autoFocus={!customerIsLocked} readOnly={customerIsLocked} defaultValue={prefilledCustomer?.fullName} /></label>
-        <label>Company<input name="company" required readOnly={customerIsLocked} defaultValue={prefilledCustomer?.company} /></label>
-        <label>Mobile number<input name="mobile" required inputMode="tel" readOnly={customerIsLocked} defaultValue={prefilledCustomer?.mobile} /></label>
-        <label>Email<input name="email" type="email" required readOnly={customerIsLocked} defaultValue={prefilledCustomer?.email} /></label>
-        <label>GSTIN<input name="gstin" readOnly={customerIsLocked} defaultValue={prefilledCustomer?.gstin} /></label>
-        <label>Project name<input name="projectName" required autoFocus={customerIsLocked} defaultValue={prefilledCustomer?.projectName} placeholder="Required" /></label>
+        <div className="admin-manual-section-heading"><p>Customer &amp; project details</p><h3>{customerMode === "registered" ? registeredCustomerSelected ? "Set the project for this customer." : "Select the quotation recipient." : "Confirm the quotation recipient."}</h3><span>{customerMode === "registered" ? "Select an active registered customer to securely autofill their record. Enter the project name and project location for this quotation." : "Use this option only for a new customer. Their contact details will be added to the RAC customer register when the quotation is created."}</span></div>
+        <fieldset className="admin-recipient-mode"><legend>Quotation recipient</legend><div><label><input type="radio" name="customerRecipientMode" checked={customerMode === "registered"} onChange={() => chooseRecipientMode("registered")} /> Existing registered customer</label><label><input type="radio" name="customerRecipientMode" checked={customerMode === "new"} onChange={() => chooseRecipientMode("new")} /> New customer</label></div></fieldset>
+        {customerMode === "registered" && <div className="admin-registered-customer-selector"><div><label>Company name<select value={recipientCompany} disabled={registeredCustomersLoading || !registeredCompanies.length} onChange={(event) => chooseRegisteredCompany(event.target.value)}><option value="">{registeredCustomersLoading ? "Loading registered companies…" : "Select company"}</option>{registeredCompanies.map((company) => <option value={company} key={company}>{company}</option>)}</select></label><label>Customer name<select value={recipientCustomerId} disabled={!recipientCompany || registeredCustomersLoading} onChange={(event) => chooseRegisteredCustomer(event.target.value)}><option value="">Select customer</option>{companyCustomers.map((customer) => <option value={customer.id} key={customer.id}>{customer.fullName}{customer.phone ? ` · ${customer.phone}` : customer.email ? ` · ${customer.email}` : ""}</option>)}</select></label></div>{registeredCustomersLoading && <p>Loading active registered customers…</p>}{registeredCustomersError && <p className="admin-form-error">{registeredCustomersError}</p>}{!registeredCustomersLoading && !registeredCustomersError && !registeredCustomers.length && <p>No active registered customer accounts are available. Choose New customer to enter the details manually.</p>}{registeredCustomerSelected && <p className="admin-registered-customer-confirmation">Customer record selected and linked to this quotation.</p>}</div>}
+        <label>Full name<input name="fullName" required autoFocus={customerMode === "new"} readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.fullName} /></label>
+        <label>Company<input name="company" required readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.company} /></label>
+        <label>Mobile number<input name="mobile" required inputMode="tel" readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.mobile} /></label>
+        <label>Email<input name="email" type="email" required readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.email} /></label>
+        <label>GSTIN<input name="gstin" readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.gstin} /></label>
+        <label>Project name<input name="projectName" required autoFocus={registeredCustomerSelected} defaultValue={prefilledCustomer?.projectName} placeholder="Required" /></label>
         <label>Project location<input name="projectLocation" required defaultValue={prefilledCustomer?.projectLocation} placeholder="Required" /></label>
-        <label>City<input name="city" readOnly={customerIsLocked} defaultValue={prefilledCustomer?.city} /></label>
-        <label>PIN code<input name="pinCode" readOnly={customerIsLocked} defaultValue={prefilledCustomer?.pinCode} /></label>
-        <label>Customer type{customerIsLocked ? <input name="customerType" readOnly defaultValue={prefilledCustomer?.customerType || "end_user"} /> : <select name="customerType" defaultValue={prefilledCustomer?.customerType || "end_user"}><option value="end_user">End user</option><option value="contractor">Contractor</option><option value="consultant">Consultant</option><option value="dealer">Dealer</option><option value="other">Other</option></select>}</label>
-        <label>Delivery preference<input name="deliveryPreference" readOnly={customerIsLocked} defaultValue={prefilledCustomer?.deliveryPreference} /></label>
+        <label>City<input name="city" readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.city} /></label>
+        <label>PIN code<input name="pinCode" readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.pinCode} /></label>
+        <label>Customer type{customerDetailsLocked ? <input name="customerType" readOnly defaultValue={prefilledCustomer?.customerType || "end_user"} /> : <select name="customerType" defaultValue={prefilledCustomer?.customerType || "end_user"}><option value="end_user">End user</option><option value="contractor">Contractor</option><option value="consultant">Consultant</option><option value="dealer">Dealer</option><option value="other">Other</option></select>}</label>
+        <label>Delivery preference<input name="deliveryPreference" readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.deliveryPreference} /></label>
         <label>Valid until<input name="validUntil" type="date" /></label>
       </div>
       {isClassONitrileTube(batchSelection.productId) && <fieldset className="nitrile-insulation-type admin-nitrile-insulation-type" aria-label="Nitrile Rubber insulation type"><legend>Insulation type</legend><label><input type="radio" name="admin-nitrile-mode" checked={nitrileMode === "standard"} onChange={() => setNitrileMode("standard")} /> Standard Tube</label><label><input type="radio" name="admin-nitrile-mode" checked={nitrileMode === "custom"} onChange={() => setNitrileMode("custom")} /> Custom Diameter / Built-Up</label><p>Custom Diameter / Built-Up uses active Nitrile Rubber Sheet Rate Cards layer by layer; it never creates a fabricated tube SKU.</p></fieldset>}
@@ -308,8 +384,8 @@ export default function AdminQuotationCreatePanel() {
       </section>
       {customBuiltUpEntries.length > 0 && <section className="built-up-nbr-basket"><div><p className="catalogue-kicker"><span /> CUSTOM BUILT-UP NBR</p><h3>Custom sheet-built quotation items</h3></div>{customBuiltUpEntries.map((entry) => { const { item, calculation } = entry; return <article key={item.id}><div><strong>Custom {item.baseDiameterMm} mm Dia × {item.requiredTotalThicknessMm} mm Built-Up NBR</strong><span>{item.pipeLengthM} m · {item.materialClass} · Admin setting wastage {builtUpNbrWastagePercent}%</span></div><div className="built-up-nbr-layer-pricing" aria-label="Layer-wise supply quantity, rate and amount">{item.layers.map((layer, index) => { const variant = getQuotationVariant(layer.variantId); const calculated = calculation?.layers[index]; return <div key={`${layer.variantId}-${index}`}><strong>Layer {index + 1}<small>{variant ? `${variant.thickness} · ${variant.lamination}` : "Sheet configuration pending"}</small></strong><span>Supply qty <b>{calculated ? `${calculated.quotedAreaM2.toFixed(2)} m²` : "—"}</b></span><span>Rate <b>{calculated?.rate !== undefined ? `${currency.format(calculated.rate)} / m²` : "Pending"}</b></span><span>Amount <b>{calculated?.amount !== undefined ? currency.format(calculated.amount) : "Pending"}</b></span></div>; })}</div><div className="built-up-nbr-basket-total"><span>{calculation ? `Finished OD ${calculation.finishedOuterDiameterMm.toFixed(2)} mm · ${calculation.totalQuotedAreaM2.toFixed(2)} m² sheet` : entry.error}</span><strong>Grouped total: {item.overrideAmount !== undefined ? currency.format(item.overrideAmount) : calculation?.basicAmount !== undefined ? currency.format(calculation.basicAmount) : "Rate pending"}</strong></div><div className="admin-built-up-override"><label>Admin override basic amount (optional)<input type="number" min="0" step="0.01" value={item.overrideAmount ?? ""} onChange={(event) => setCustomBuiltUpItems((current) => current.map((currentItem) => currentItem.id === item.id ? { ...currentItem, overrideAmount: event.target.value === "" ? undefined : Number(event.target.value) } : currentItem))} placeholder="Use calculated amount" /></label>{item.overrideAmount !== undefined && <label>Override reason<textarea value={item.overrideReason || ""} onChange={(event) => setCustomBuiltUpItems((current) => current.map((currentItem) => currentItem.id === item.id ? { ...currentItem, overrideReason: event.target.value } : currentItem))} required placeholder="Why is this commercial amount different?" /></label>}</div><footer><button type="button" onClick={() => setEditingBuiltUpItem(item)}>Edit</button><button type="button" onClick={() => setCustomBuiltUpItems((current) => [...current, { ...item, id: `built-up-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, layers: item.layers.map((layer) => ({ ...layer })) }])}>Duplicate</button><button type="button" onClick={() => setCustomBuiltUpItems((current) => current.filter((currentItem) => currentItem.id !== item.id))}><Trash2 size={14} />Remove</button></footer></article>; })}</section>}
       <section className="admin-selected-configurations" aria-labelledby="admin-selected-configurations-title">
-        <div className="admin-drawer-section-heading"><div><p className="catalogue-kicker"><span /> CONFIGURATION LINES</p><h3 id="admin-selected-configurations-title">Selected configurations</h3><span>Select a valid product, class, size and facing for each line. Quantity and the Admin rate can be adjusted before generating the quotation.</span></div><b>{configurationRows.length} line{configurationRows.length === 1 ? "" : "s"}</b></div>
-        {configurationRows.length ? <div className="admin-selected-configurations-scroll" tabIndex={0} aria-label="Editable quotation configuration table"><table><thead><tr><th>Sr no</th><th>Thickness</th><th>Product</th><th>Lamination</th><th>Material class</th><th>Size / packing</th><th>Order quantity</th><th>Quantity unit</th><th>Rate / unit</th><th>Subtotal</th></tr></thead><tbody>{rowCalculations.map((entry, index) => {
+        <div className="admin-configuration-heading"><p>CONFIGURATION LINES</p><h3 id="admin-selected-configurations-title">Selected configurations</h3><span>Select a valid product, class, size and facing for each line. Quantity and the Admin rate can be adjusted before generating the quotation.</span></div>
+        {configurationRows.length ? <div className="admin-selected-configurations-scroll" tabIndex={0} aria-label="Editable quotation configuration table"><table><thead><tr><th>Product / thickness</th><th>Lamination</th><th>Material class</th><th>Size / packing</th><th>Order quantity</th><th>Quantity unit</th><th>Rate / unit</th><th>Subtotal</th><th aria-label="Remove configuration" /></tr></thead><tbody>{rowCalculations.map((entry, index) => {
           const { row, variant, line, error } = entry;
           const { configuration } = row;
           const materialClasses = quoteOptions(row.productId, "materialClass");
@@ -319,20 +395,19 @@ export default function AdminQuotationCreatePanel() {
           const units = orderUnitOptions(row.productId, variant);
           const rate = row.rateOverride ?? variant?.rate;
           return <tr key={row.id}>
-            <td className="admin-configuration-row-number">{index + 1}</td>
-            <td><select aria-label={`Thickness for row ${index + 1}`} value={configuration.thickness} onChange={(event) => updateRowConfiguration(row.id, "thickness", event.target.value)}>{thicknesses.map((value) => <option key={value} value={value}>{value}</option>)}</select></td>
-            <td><select aria-label={`Product for row ${index + 1}`} value={row.productId} onChange={(event) => changeRowProduct(row.id, event.target.value as QuoteProductId)}>{quotationProducts.map((product) => <option value={product.id} key={product.id}>{product.name}</option>)}</select></td>
+            <td className="admin-configuration-product"><span className="admin-configuration-row-number" aria-label={`Line ${index + 1}`}>{index + 1}</span><select aria-label={`Product for row ${index + 1}`} value={row.productId} onChange={(event) => changeRowProduct(row.id, event.target.value as QuoteProductId)}>{quotationProducts.map((product) => <option value={product.id} key={product.id}>{product.name}</option>)}</select><select aria-label={`Thickness for row ${index + 1}`} title={`Thickness: ${configuration.thickness}`} value={configuration.thickness} onChange={(event) => updateRowConfiguration(row.id, "thickness", event.target.value)}>{thicknesses.map((value) => <option key={value} value={value}>{value}</option>)}</select></td>
             <td><select aria-label={`Lamination for row ${index + 1}`} value={configuration.lamination} onChange={(event) => updateRowConfiguration(row.id, "lamination", event.target.value)}>{laminations.map((value) => <option key={value} value={value}>{value}</option>)}</select></td>
             <td><select aria-label={`Material class for row ${index + 1}`} value={configuration.materialClass} onChange={(event) => updateRowConfiguration(row.id, "materialClass", event.target.value)}>{materialClasses.map((value) => <option key={value} value={value}>{value}</option>)}</select></td>
             <td><select aria-label={`Size or packing for row ${index + 1}`} value={configuration.size} onChange={(event) => updateRowConfiguration(row.id, "size", event.target.value)}>{sizes.map((value) => <option key={value} value={value}>{value}</option>)}</select></td>
             <td><input aria-label={`Order quantity for row ${index + 1}`} type="number" min="1" step="1" value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} /></td>
             <td><select aria-label={`Quantity unit for row ${index + 1}`} value={row.orderUnit} onChange={(event) => updateRow(row.id, { orderUnit: event.target.value as QuoteOrderUnit })}>{units.map((unit) => <option value={unit.value} key={unit.value}>{unit.label}</option>)}</select></td>
             <td className="admin-configuration-rate"><input aria-label={`Rate for row ${index + 1}`} type="number" min="0" step="0.00001" value={rate ?? ""} onChange={(event) => updateRow(row.id, { rateOverride: event.target.value === "" ? undefined : Number(event.target.value) })} /><small>{variant ? `per ${variant.rateUnit}` : error || "Select configuration"}</small></td>
-            <td className="admin-configuration-subtotal"><strong>{line ? currency.format(line.amount) : "-"}</strong><small>{error || line?.technicalQuantity}</small><button type="button" onClick={() => removeRow(row.id)} aria-label={`Remove configuration row ${index + 1}`}><Trash2 size={14} />Remove</button></td>
+            <td className="admin-configuration-subtotal"><strong>{line ? currency.format(line.amount) : "-"}</strong><small>{error || line?.technicalQuantity}</small></td>
+            <td className="admin-configuration-remove"><button type="button" onClick={() => removeRow(row.id)} aria-label={`Remove configuration row ${index + 1}`}><Trash2 size={14} />Remove</button></td>
           </tr>;
         })}</tbody></table></div> : <p className="admin-selected-configurations-empty">No product configurations yet. Use <strong>Multiple selection</strong> above to select thicknesses and add your first quotation line.</p>}
       </section>
-      <div className="admin-customer-fields-grid admin-manual-commercial-details"><label>GST rate (%)<input type="number" min="0" max="100" step="0.01" value={gstRate} onChange={(event) => setGstRate(Number(event.target.value))} /></label><label>Internal notes<textarea name="internalNotes" placeholder="Optional private commercial note" /></label></div><div className="admin-revision-total"><span>Subtotal <b>{currency.format(subtotal)}</b></span><span>GST <b>{currency.format(gstAmount)}</b></span><strong>Quotation total <b>{currency.format(subtotal + gstAmount)}</b></strong></div>{error && <p className="admin-form-error">{error}</p>}{message && <p className="admin-records-message">{message}</p>}<div className="admin-customer-form-actions"><button type="button" className="admin-drawer-secondary" onClick={() => router.push("/admin/quotations")}>Cancel</button><button className="admin-os-primary" disabled={busy || customerLoading}>{busy ? "Creating..." : "Generate quotation"}<ArrowRight size={16} /></button></div>
+      <div className="admin-customer-fields-grid admin-manual-commercial-details"><label>GST rate (%)<input type="number" min="0" max="100" step="0.01" value={gstRate} onChange={(event) => setGstRate(Number(event.target.value))} /></label><label>Internal notes<textarea name="internalNotes" placeholder="Optional private commercial note" /></label></div><div className="admin-revision-total"><span>Subtotal <b>{currency.format(subtotal)}</b></span><span>GST <b>{currency.format(gstAmount)}</b></span><strong>Quotation total <b>{currency.format(subtotal + gstAmount)}</b></strong></div>{error && <p className="admin-form-error">{error}</p>}{message && <p className="admin-records-message">{message}</p>}<div className="admin-customer-form-actions"><button type="button" className="admin-drawer-secondary" onClick={() => router.push("/admin/quotations")}>Cancel</button><button className="admin-os-primary" disabled={busy || customerLoading || registeredCustomersLoading || (customerMode === "registered" && !registeredCustomerSelected)}>{busy ? "Creating..." : "Generate quotation"}<ArrowRight size={16} /></button></div>
     </form>
   </div>;
 }

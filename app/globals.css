@@ -518,38 +518,100 @@ section[id], article[id] { scroll-margin-top: 108px; }
   .catalogue-mobile-nav-actions p a { min-height: 0; padding: 0; display: inline; border: 0; color: #0874de; background: transparent; font: inherit; font-weight: 900; }
 }
 
-/* Admin manual quotation: every rate-card property stays editable inside the
-   dedicated configuration-table scroll area, including tape pack options. */
-.admin-manual-quotation .admin-selected-configurations table { min-width: 1390px; }
-.admin-manual-quotation .admin-selected-configurations th { white-space: nowrap; }
-.admin-manual-quotation .admin-selected-configurations td { min-width: 104px; }
-.admin-manual-quotation .admin-selected-configurations td:first-child { min-width: 54px; }
-.admin-manual-quotation .admin-selected-configurations td:nth-child(2) { min-width: 110px; }
-.admin-manual-quotation .admin-selected-configurations td:nth-child(3) { min-width: 180px; }
-.admin-manual-quotation .admin-selected-configurations td:nth-child(5) { min-width: 140px; }
-.admin-manual-quotation .admin-selected-configurations td:nth-child(6) { min-width: 205px; }
-.admin-manual-quotation .admin-selected-configurations td:nth-child(9),
-.admin-manual-quotation .admin-selected-configurations td:nth-child(10) { min-width: 150px; }
-.admin-manual-quotation .admin-selected-configurations select { width: 100%; min-width: 0; min-height: 36px; padding: 7px 26px 7px 8px; border: 1px solid #d5e4ef; border-radius: 7px; outline: 0; color: #234762; background: #fbfdff; font: inherit; font-size: 10px; }
-.admin-manual-quotation .admin-selected-configurations select:focus { border-color: #0b83e4; box-shadow: 0 0 0 3px rgba(10,128,228,.11); }
-.admin-manual-quotation .admin-selected-configurations .admin-configuration-row-number { color: #1b5f93; font-weight: 900; text-align: center; }
-.admin-manual-quotation .admin-selected-configurations .admin-configuration-rate input { width: 100%; }
-.admin-manual-quotation .admin-selected-configurations .admin-configuration-rate small,
-.admin-manual-quotation .admin-selected-configurations .admin-configuration-subtotal small { min-height: 28px; }
-.admin-manual-quotation .admin-selected-configurations .admin-configuration-subtotal > button { margin-top: 8px; }
-.admin-manual-quotation .admin-selected-configurations,
-.admin-manual-quotation .admin-selected-configurations-scroll { width: 100%; min-width: 0; max-width: 100%; }
+/* Manual quotation configuration lines: compact fixed columns stay inside
+   their card on desktop, while the same native controls become readable cards
+   on phones. No quotation data or editing behaviour is changed here. */
 .admin-create-page > .admin-os-content,
-.admin-manual-quotation { min-width: 0; max-width: 100%; }
-.admin-manual-quotation .admin-selected-configurations { contain: inline-size; }
-.admin-manual-quotation .admin-selected-configurations-scroll { display: block; box-sizing: border-box; overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; }
-.admin-manual-quotation .admin-selected-configurations-scroll { overflow-x: scroll; overflow-y: hidden; scrollbar-gutter: stable; scrollbar-color: #6f7277 #eef3f7; scrollbar-width: auto; }
-.admin-manual-quotation .admin-selected-configurations-scroll::-webkit-scrollbar { height: 14px; }
-.admin-manual-quotation .admin-selected-configurations-scroll::-webkit-scrollbar-track { border-radius: 999px; background: #eef3f7; }
-.admin-manual-quotation .admin-selected-configurations-scroll::-webkit-scrollbar-thumb { min-width: 96px; border: 3px solid #eef3f7; border-radius: 999px; background: #6f7277; }
-.admin-manual-quotation .admin-selected-configurations-scroll::-webkit-scrollbar-thumb:hover { background: #3f647f; }
-@media (max-width:760px) {
-  .admin-manual-quotation .admin-selected-configurations table { width: 1390px; min-width: 1390px; }
+.admin-manual-quotation,
+.admin-manual-quotation .admin-selected-configurations,
+.admin-manual-quotation .admin-selected-configurations-scroll { width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; }
+.admin-manual-quotation .admin-selected-configurations { margin: 24px 0; contain: inline-size; }
+.admin-manual-quotation .admin-configuration-heading { margin: 0 0 16px; }
+.admin-manual-quotation .admin-configuration-heading > p { margin: 0; color: #10294d; font-size: clamp(25px, 2vw, 32px); font-weight: 900; letter-spacing: -.045em; line-height: 1.08; text-transform: uppercase; }
+.admin-manual-quotation .admin-configuration-heading > h3 { margin: 4px 0 0; color: #10294d; font-size: 21px; font-weight: 800; letter-spacing: -.025em; line-height: 1.18; }
+.admin-manual-quotation .admin-configuration-heading > span { display: block; max-width: 950px; margin-top: 7px; color: #607794; font-size: 15px; line-height: 1.45; overflow-wrap: anywhere; }
+.admin-manual-quotation .admin-selected-configurations-scroll { display: block; overflow: hidden; border: 1px solid #d8e6ef; border-radius: 13px; background: #fff; overscroll-behavior: contain; scrollbar-width: none; }
+.admin-manual-quotation .admin-selected-configurations-scroll::-webkit-scrollbar { display: none; }
+.admin-manual-quotation .admin-selected-configurations table { width: 100%; min-width: 0; max-width: 100%; table-layout: fixed; border-collapse: collapse; }
+.admin-manual-quotation .admin-selected-configurations th { padding: 12px 10px; border: 0; color: #fff; background: #124775; font-size: 13px; font-weight: 800; line-height: 1.18; text-align: left; white-space: normal; overflow-wrap: anywhere; }
+.admin-manual-quotation .admin-selected-configurations th:first-child { border-radius: 12px 0 0 0; }
+.admin-manual-quotation .admin-selected-configurations th:last-child { border-radius: 0 12px 0 0; }
+.admin-manual-quotation .admin-selected-configurations th:nth-child(1) { width: 18%; }
+.admin-manual-quotation .admin-selected-configurations th:nth-child(2) { width: 9%; }
+.admin-manual-quotation .admin-selected-configurations th:nth-child(3) { width: 10.5%; }
+.admin-manual-quotation .admin-selected-configurations th:nth-child(4) { width: 16%; }
+.admin-manual-quotation .admin-selected-configurations th:nth-child(5) { width: 8.5%; }
+.admin-manual-quotation .admin-selected-configurations th:nth-child(6) { width: 9.5%; }
+.admin-manual-quotation .admin-selected-configurations th:nth-child(7) { width: 10.5%; }
+.admin-manual-quotation .admin-selected-configurations th:nth-child(8) { width: 11.5%; }
+.admin-manual-quotation .admin-selected-configurations th:nth-child(9) { width: 6.5%; }
+.admin-manual-quotation .admin-selected-configurations td { min-width: 0; padding: 11px 10px; border-bottom: 1px solid #dfeaf2; vertical-align: top; overflow-wrap: anywhere; }
+.admin-manual-quotation .admin-selected-configurations tbody tr:last-child td { border-bottom: 0; }
+.admin-manual-quotation .admin-selected-configurations select,
+.admin-manual-quotation .admin-selected-configurations input { width: 100%; min-width: 0; min-height: 44px; box-sizing: border-box; padding: 7px 26px 7px 10px; border: 1px solid #cfe0ee; border-radius: 8px; outline: 0; color: #163c62; background: #fbfdff; font: inherit; font-size: 13px; line-height: 1.26; }
+.admin-manual-quotation .admin-selected-configurations input { padding-right: 9px; }
+.admin-manual-quotation .admin-selected-configurations select:focus,
+.admin-manual-quotation .admin-selected-configurations input:focus { border-color: #0b83e4; box-shadow: 0 0 0 3px rgba(10,128,228,.11); }
+.admin-manual-quotation .admin-selected-configurations select { white-space: normal; overflow-wrap: anywhere; }
+.admin-manual-quotation .admin-selected-configurations td:nth-child(4) select { min-height: 54px; }
+.admin-manual-quotation .admin-configuration-product { display: grid; grid-template-columns: 17px minmax(0, 1fr); align-items: center; gap: 6px 7px; }
+.admin-manual-quotation .admin-configuration-product .admin-configuration-row-number { grid-row: 1 / span 2; align-self: start; padding-top: 13px; color: #155687; font-size: 13px; font-weight: 900; line-height: 1; text-align: center; }
+.admin-manual-quotation .admin-configuration-product select { min-width: 0; }
+.admin-manual-quotation .admin-configuration-product select:last-child { min-height: 36px; padding-top: 5px; padding-bottom: 5px; font-size: 12px; }
+.admin-manual-quotation .admin-configuration-rate small,
+.admin-manual-quotation .admin-configuration-subtotal small { display: block; margin-top: 5px; color: #647c98; font-size: 12px; line-height: 1.28; overflow-wrap: anywhere; }
+.admin-manual-quotation .admin-configuration-subtotal strong { display: block; color: #0e3e6d; font-size: 16px; font-weight: 900; line-height: 1.15; overflow-wrap: anywhere; }
+.admin-manual-quotation .admin-configuration-remove { vertical-align: middle; }
+.admin-manual-quotation .admin-configuration-remove > button { display: inline-flex; align-items: center; justify-content: center; width: 100%; min-height: 42px; padding: 7px 8px; border: 1px solid #f6bbc0; border-radius: 8px; color: #bd3039; background: #fffafa; font-size: 12px; font-weight: 800; line-height: 1.1; white-space: nowrap; }
+.admin-manual-quotation .admin-configuration-remove > button svg { flex: 0 0 auto; }
+
+@media (max-width: 1180px) {
+  .admin-manual-quotation .admin-selected-configurations th { padding: 10px 6px; font-size: 11px; }
+  .admin-manual-quotation .admin-selected-configurations td { padding: 9px 6px; }
+  .admin-manual-quotation .admin-selected-configurations select,
+  .admin-manual-quotation .admin-selected-configurations input { min-height: 40px; padding: 6px 21px 6px 7px; font-size: 11px; }
+  .admin-manual-quotation .admin-selected-configurations input { padding-right: 7px; }
+  .admin-manual-quotation .admin-selected-configurations td:nth-child(4) select { min-height: 48px; }
+  .admin-manual-quotation .admin-configuration-product { grid-template-columns: 13px minmax(0, 1fr); gap: 5px; }
+  .admin-manual-quotation .admin-configuration-product .admin-configuration-row-number { padding-top: 12px; font-size: 11px; }
+  .admin-manual-quotation .admin-configuration-product select:last-child { min-height: 32px; padding-top: 4px; padding-bottom: 4px; font-size: 10px; }
+  .admin-manual-quotation .admin-configuration-rate small,
+  .admin-manual-quotation .admin-configuration-subtotal small { font-size: 10px; }
+  .admin-manual-quotation .admin-configuration-subtotal strong { font-size: 13px; }
+  .admin-manual-quotation .admin-configuration-remove > button { min-height: 38px; padding: 6px 5px; font-size: 10px; }
+  .admin-manual-quotation .admin-configuration-remove > button svg { width: 12px; height: 12px; }
+}
+
+@media (max-width: 760px) {
+  .admin-manual-quotation .admin-configuration-heading > p { font-size: 25px; }
+  .admin-manual-quotation .admin-configuration-heading > h3 { font-size: 19px; }
+  .admin-manual-quotation .admin-configuration-heading > span { font-size: 14px; }
+  .admin-manual-quotation .admin-selected-configurations table,
+  .admin-manual-quotation .admin-selected-configurations tbody,
+  .admin-manual-quotation .admin-selected-configurations tr { display: block; }
+  .admin-manual-quotation .admin-selected-configurations thead { display: none; }
+  .admin-manual-quotation .admin-selected-configurations tbody tr { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 13px; border-bottom: 1px solid #dfeaf2; }
+  .admin-manual-quotation .admin-selected-configurations tbody tr:last-child { border-bottom: 0; }
+  .admin-manual-quotation .admin-selected-configurations td { display: block; min-width: 0; padding: 0; border: 0; }
+  .admin-manual-quotation .admin-selected-configurations td::before { display: block; margin-bottom: 5px; color: #345b7e; font-size: 11px; font-weight: 800; line-height: 1.2; }
+  .admin-manual-quotation .admin-selected-configurations td:nth-child(1),
+  .admin-manual-quotation .admin-selected-configurations td:nth-child(4),
+  .admin-manual-quotation .admin-selected-configurations td:nth-child(8),
+  .admin-manual-quotation .admin-selected-configurations td:nth-child(9) { grid-column: 1 / -1; }
+  .admin-manual-quotation .admin-selected-configurations td:nth-child(1)::before { content: "Product and thickness"; }
+  .admin-manual-quotation .admin-selected-configurations td:nth-child(2)::before { content: "Lamination"; }
+  .admin-manual-quotation .admin-selected-configurations td:nth-child(3)::before { content: "Material class"; }
+  .admin-manual-quotation .admin-selected-configurations td:nth-child(4)::before { content: "Size / packing"; }
+  .admin-manual-quotation .admin-selected-configurations td:nth-child(5)::before { content: "Order quantity"; }
+  .admin-manual-quotation .admin-selected-configurations td:nth-child(6)::before { content: "Quantity unit"; }
+  .admin-manual-quotation .admin-selected-configurations td:nth-child(7)::before { content: "Rate / unit"; }
+  .admin-manual-quotation .admin-selected-configurations td:nth-child(8)::before { content: "Subtotal"; }
+  .admin-manual-quotation .admin-configuration-product { grid-template-columns: 20px minmax(0, 1fr); }
+  .admin-manual-quotation .admin-configuration-product .admin-configuration-row-number { padding-top: 14px; font-size: 13px; }
+  .admin-manual-quotation .admin-selected-configurations select,
+  .admin-manual-quotation .admin-selected-configurations input { min-height: 43px; font-size: 13px; }
+  .admin-manual-quotation .admin-selected-configurations td:nth-child(4) select { min-height: 54px; }
+  .admin-manual-quotation .admin-configuration-remove > button { max-width: 170px; min-height: 42px; padding: 7px 12px; font-size: 12px; }
 }
 
 /* Class O Nitrile keeps its two insulation choices visibly side by side in
@@ -559,4 +621,41 @@ section[id], article[id] { scroll-margin-top: 108px; }
 .admin-manual-quotation > .admin-nitrile-insulation-type > p { flex: 0 0 100%; }
 @media (max-width:720px) {
   .admin-manual-quotation > .admin-nitrile-insulation-type > label { white-space: normal; }
+}
+
+/* Manual quotation form sequence: recipient first, then configuration. */
+.admin-manual-quotation > .admin-manual-customer-details { order: 1; }
+.admin-manual-quotation > .admin-multiple-selection { order: 2; }
+.admin-manual-quotation > .admin-selected-configurations { order: 3; }
+.admin-manual-quotation > .admin-nitrile-insulation-type { order: 4; }
+.admin-manual-quotation > .built-up-nbr-basket { order: 5; }
+.admin-manual-quotation > .admin-manual-commercial-details { order: 6; }
+.admin-manual-quotation > .admin-revision-total { order: 7; }
+.admin-manual-quotation > .admin-form-error,
+.admin-manual-quotation > .admin-records-message { order: 8; }
+.admin-manual-quotation > .admin-customer-form-actions { order: 9; }
+
+/* Recipient selection keeps approved account data separate from manual entry. */
+.admin-manual-quotation .admin-recipient-mode { grid-column: 1 / -1; min-width: 0; margin: 0; padding: 13px 15px 15px; border: 1px solid #cfe3ef; border-radius: 11px; background: linear-gradient(110deg,#f5fbff,#f6fcfa); }
+.admin-manual-quotation .admin-recipient-mode legend { padding: 0 5px; color: #1d4d78; font-size: 11px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
+.admin-manual-quotation .admin-recipient-mode > div { display: flex; flex-wrap: wrap; gap: 10px; }
+.admin-manual-quotation .admin-recipient-mode label { min-height: 40px; padding: 0 13px; display: inline-flex; align-items: center; gap: 8px; border: 1px solid #d2e2ec; border-radius: 8px; color: #294d70; background: #fff; font-size: 12px; font-weight: 800; }
+.admin-manual-quotation .admin-recipient-mode label:has(input:checked) { border-color: #1689dc; color: #075b9d; background: #eef9ff; box-shadow: 0 0 0 3px rgba(22,137,220,.08); }
+.admin-manual-quotation .admin-recipient-mode input { width: auto; min-height: 0; margin: 0; accent-color: #087fda; }
+.admin-manual-quotation .admin-registered-customer-selector { grid-column: 1 / -1; min-width: 0; padding: 14px 15px; border: 1px solid #d7e7f0; border-radius: 11px; background: #fbfdff; }
+.admin-manual-quotation .admin-registered-customer-selector > div { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 13px; }
+.admin-manual-quotation .admin-registered-customer-selector label { min-width: 0; display: grid; gap: 6px; color: #315675; font-size: 11px; font-weight: 850; }
+.admin-manual-quotation .admin-registered-customer-selector select { width: 100%; min-width: 0; min-height: 42px; padding: 9px 11px; border: 1px solid #cfe0ed; border-radius: 8px; outline: 0; color: #173d63; background: #fff; font: inherit; font-size: 12px; }
+.admin-manual-quotation .admin-registered-customer-selector select:focus { border-color: #0b83e4; box-shadow: 0 0 0 3px rgba(10,128,228,.11); }
+.admin-manual-quotation .admin-registered-customer-selector select:disabled { cursor: not-allowed; color: #8498aa; background: #f4f8fb; }
+.admin-manual-quotation .admin-registered-customer-selector > p { margin: 10px 0 0; color: #698199; font-size: 11px; line-height: 1.45; }
+.admin-manual-quotation .admin-registered-customer-selector > .admin-form-error { color: #bc3f45; }
+.admin-manual-quotation .admin-registered-customer-selector > .admin-registered-customer-confirmation { color: #087860; font-weight: 800; }
+@media (max-width:760px) {
+  .admin-manual-quotation .admin-recipient-mode { padding: 11px; }
+  .admin-manual-quotation .admin-recipient-mode > div { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  .admin-manual-quotation .admin-recipient-mode label { min-height: 42px; font-size: 11px; }
+  .admin-manual-quotation .admin-recipient-mode input { width: auto !important; min-height: 0 !important; padding: 0 !important; }
+  .admin-manual-quotation .admin-registered-customer-selector { padding: 12px; }
+  .admin-manual-quotation .admin-registered-customer-selector > div { grid-template-columns: 1fr; gap: 11px; }
 }
