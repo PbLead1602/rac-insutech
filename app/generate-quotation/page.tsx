@@ -7,6 +7,7 @@ import { ArrowRight, FileText, MessageCircle, Plus, ShieldCheck, Trash2 } from "
 import { CatalogueFooter, CatalogueHeader } from "@/components/catalogue-header";
 import { TurnstileWidget } from "@/components/turnstile";
 import { BuiltUpNbrConfigurator, type CustomBuiltUpNbrDraft } from "@/components/built-up-nbr-configurator";
+import { IndiaLocationFields } from "@/components/india-location-fields";
 import { whatsappContactHref } from "@/lib/contact";
 import { customerFetch } from "@/lib/auth/customer-client";
 import { env } from "@/lib/env";
@@ -508,8 +509,7 @@ function GenerateQuotationWorkspace() {
           <label>Full name<input required value={customer.fullName} readOnly aria-readonly="true" /></label><label>Company<input required value={customer.company} readOnly aria-readonly="true" /></label>
           <label>Mobile<input required type="tel" value={customer.mobile} readOnly aria-readonly="true" /></label><label>Email<input required type="email" value={customer.email} readOnly aria-readonly="true" /></label>
           <label>Project name<input required value={customer.projectName} onChange={(event) => updateCustomer("projectName", event.target.value)} placeholder="Required" /></label><label>Project location<input required value={customer.projectLocation} onChange={(event) => updateCustomer("projectLocation", event.target.value)} placeholder="Required" /></label>
-          <label>City<input value={customer.city} onChange={(event) => updateCustomer("city", event.target.value)} placeholder="Optional" /></label><label>State<input value={customer.state || ""} onChange={(event) => updateCustomer("state", event.target.value)} placeholder="Optional" /></label>
-          <label>PIN code<input value={customer.pinCode} onChange={(event) => updateCustomer("pinCode", event.target.value)} placeholder="Optional" /></label><label>GSTIN<input value={customer.gstin} readOnly aria-readonly="true" /></label>
+          <IndiaLocationFields value={{ state: customer.state, city: customer.city, pinCode: customer.pinCode }} onChange={(location) => setCustomerOverride((current) => current ? { ...current, ...location } : current)} /><label>GSTIN<input value={customer.gstin} readOnly aria-readonly="true" /></label>
           <label>Customer type<select value={customer.customerType} disabled><option value="end_user">End user</option><option value="contractor">Contractor</option><option value="consultant">Consultant</option><option value="dealer">Dealer</option><option value="other">Other</option></select></label>
           <label>Delivery preference<input value={customer.deliveryPreference} onChange={(event) => updateCustomer("deliveryPreference", event.target.value)} placeholder="Optional" /></label><label className="quotation-notes">Project notes<textarea value={customer.notes} onChange={(event) => updateCustomer("notes", event.target.value)} placeholder="Application, temperature range, delivery or drawing reference" rows={3} /></label>
           <label className="quotation-notes">Billing address<textarea value={customer.billingAddress || ""} onChange={(event) => updateCustomer("billingAddress", event.target.value)} placeholder="Optional billing address" rows={3} /></label><label className="quotation-notes">Shipping address<textarea value={customer.shippingAddress || ""} onChange={(event) => updateCustomer("shippingAddress", event.target.value)} placeholder="Optional delivery address" rows={3} /></label>
