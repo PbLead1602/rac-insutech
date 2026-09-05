@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useId, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Plus, Trash2 } from "lucide-react";
 import { adminFetch } from "@/lib/auth/admin-client";
@@ -8,6 +8,7 @@ import { BuiltUpNbrConfigurator, type CustomBuiltUpNbrDraft } from "@/components
 import type { CustomerRecord, EnquiryRecord, QuotationRecord } from "@/lib/db/types";
 import { calculateQuoteLine, findQuoteVariant, getQuotationVariant, quotationProducts, quotationVariants, quoteOptions, type CalculatedQuoteLine, type QuoteOrderUnit, type QuoteProductId, type QuoteVariant } from "@/lib/quotations/catalogue";
 import { calculateBuiltUpCylinderInsulation, thicknessMmFromRateCardLabel } from "@/lib/quotations/built-up-nbr";
+import { findIndiaCityPinCodeOption, searchIndiaCities } from "@/lib/india-city-pin-codes";
 
 type BatchSelection = { productId: QuoteProductId; materialClass: string; thicknesses: string[]; sizes: string[]; lamination: string };
 type Configuration = Pick<QuoteVariant, "materialClass" | "thickness" | "size" | "lamination">;
@@ -101,6 +102,71 @@ function quotationCustomerTypeForRecord(type: CustomerRecord["customerType"]) {
 
 function registeredCustomerCompany(customer: CustomerRecord) {
   return customer.company?.trim() || "Individual customer";
+}
+
+type CityPinCodeFieldsProps = { readOnly: boolean; initialCity?: string; initialPinCode?: string };
+
+function CityPinCodeFields({ readOnly, initialCity = "", initialPinCode = "" }: CityPinCodeFieldsProps) {
+  const cityInputId = useId();
+  const pinCodeInputId = useId();
+  const cityListId = useId();
+  const pinCodeListId = useId();
+  const initialLocation = findIndiaCityPinCodeOption(initialCity);
+  const [cityQuery, setCityQuery] = useState(initialLocation?.city || initialCity);
+  const [selectedCity, setSelectedCity] = useState(initialLocation?.city || initialCity);
+  const [pinCodeQuery, setPinCodeQuery] = useState(initialPinCode);
+  const [selectedPinCode, setSelectedPinCode] = useState(initialPinCode);
+  const [cityOpen, setCityOpen] = useState(false);
+  const [pinCodeOpen, setPinCodeOpen] = useState(false);
+  const [activeCityIndex, setActiveCityIndex] = useState(-1);
+  const [activePinCodeIndex, setActivePinCodeIndex] = useState(-1);
+  const citySuggestions = useMemo(() => searchIndiaCities(cityQuery).slice(0, 8), [cityQuery]);
+  const selectedLocation = useMemo(() => findIndiaCityPinCodeOption(selectedCity), [selectedCity]);
+  const availablePinCodes = selectedLocation?.pinCodes || (selectedCity && initialCity === selectedCity && initialPinCode ? [initialPinCode] : []);
+  const pinCodeSuggestions = useMemo(() => availablePinCodes.filter((pinCode) => pinCode.startsWith(pinCodeQuery.trim())).slice(0, 8), [availablePinCodes, pinCodeQuery]);
+
+  const chooseCity = (city: string) => {
+    setCityQuery(city);
+    setSelectedCity(city);
+    setPinCodeQuery("");
+    setSelectedPinCode("");
+    setCityOpen(false);
+    setPinCodeOpen(false);
+    setActiveCityIndex(-1);
+  };
+  const choosePinCode = (pinCode: string) => {
+    setPinCodeQuery(pinCode);
+    setSelectedPinCode(pinCode);
+    setPinCodeOpen(false);
+    setActivePinCodeIndex(-1);
+  };
+  const navigate = <T extends string>(event: KeyboardEvent<HTMLInputElement>, items: readonly T[], activeIndex: number, setActiveIndex: (index: number) => void, choose: (item: T) => void, setOpen: (open: boolean) => void) => {
+    if (event.key === "ArrowDown") { event.preventDefault(); setOpen(true); setActiveIndex(items.length ? (activeIndex + 1) % items.length : -1); return; }
+    if (event.key === "ArrowUp") { event.preventDefault(); setOpen(true); setActiveIndex(items.length ? (activeIndex - 1 + items.length) % items.length : -1); return; }
+    if (event.key === "Enter" && activeIndex >= 0 && items[activeIndex]) { event.preventDefault(); choose(items[activeIndex]); return; }
+    if (event.key === "Escape") { setOpen(false); setActiveIndex(-1); }
+  };
+
+  if (readOnly) return <><label>City<input name="city" readOnly defaultValue={initialCity} /></label><label>PIN code<input name="pinCode" readOnly defaultValue={initialPinCode} /></label></>;
+
+  return <>
+    <div className="admin-city-pin-field">
+      <label htmlFor={cityInputId}>City</label>
+      <div className="admin-location-combobox">
+        <input id={cityInputId} value={cityQuery} autoComplete="off" role="combobox" aria-autocomplete="list" aria-expanded={cityOpen && Boolean(cityQuery.trim())} aria-controls={cityListId} aria-activedescendant={activeCityIndex >= 0 ? `${cityListId}-${activeCityIndex}` : undefined} onFocus={() => setCityOpen(true)} onBlur={() => window.setTimeout(() => setCityOpen(false), 120)} onChange={(event) => { setCityQuery(event.target.value); setSelectedCity(""); setPinCodeQuery(""); setSelectedPinCode(""); setCityOpen(true); setActiveCityIndex(-1); }} onKeyDown={(event) => navigate(event, citySuggestions.map((option) => option.city), activeCityIndex, setActiveCityIndex, chooseCity, setCityOpen)} placeholder="Start typing a city" />
+        <input type="hidden" name="city" value={selectedCity} />
+        {cityOpen && cityQuery.trim() && <div id={cityListId} className="admin-location-options" role="listbox" aria-label="Matching cities">{citySuggestions.length ? citySuggestions.map((option, index) => <button type="button" role="option" aria-selected={index === activeCityIndex} className={index === activeCityIndex ? "active" : ""} id={`${cityListId}-${index}`} key={option.city} onMouseDown={(event) => event.preventDefault()} onClick={() => chooseCity(option.city)}>{option.city}</button>) : <p>No matching cities found</p>}</div>}
+      </div>
+    </div>
+    <div className="admin-city-pin-field">
+      <label htmlFor={pinCodeInputId}>PIN code</label>
+      <div className="admin-location-combobox">
+        <input id={pinCodeInputId} value={pinCodeQuery} disabled={!selectedCity} autoComplete="off" inputMode="numeric" role="combobox" aria-autocomplete="list" aria-expanded={pinCodeOpen && Boolean(selectedCity)} aria-controls={pinCodeListId} aria-activedescendant={activePinCodeIndex >= 0 ? `${pinCodeListId}-${activePinCodeIndex}` : undefined} onFocus={() => setPinCodeOpen(true)} onBlur={() => window.setTimeout(() => setPinCodeOpen(false), 120)} onChange={(event) => { setPinCodeQuery(event.target.value); setSelectedPinCode(""); setPinCodeOpen(true); setActivePinCodeIndex(-1); }} onKeyDown={(event) => navigate(event, pinCodeSuggestions, activePinCodeIndex, setActivePinCodeIndex, choosePinCode, setPinCodeOpen)} placeholder={selectedCity ? "Search and select PIN code" : "Select city first"} />
+        <input type="hidden" name="pinCode" value={selectedPinCode} />
+        {pinCodeOpen && selectedCity && <div id={pinCodeListId} className="admin-location-options" role="listbox" aria-label={`PIN codes for ${selectedCity}`}>{pinCodeSuggestions.length ? pinCodeSuggestions.map((pinCode, index) => <button type="button" role="option" aria-selected={index === activePinCodeIndex} className={index === activePinCodeIndex ? "active" : ""} id={`${pinCodeListId}-${index}`} key={pinCode} onMouseDown={(event) => event.preventDefault()} onClick={() => choosePinCode(pinCode)}>{pinCode}</button>) : <p>No PIN codes found for this city</p>}</div>}
+      </div>
+    </div>
+  </>;
 }
 
 export default function AdminQuotationCreatePanel() {
@@ -358,8 +424,7 @@ export default function AdminQuotationCreatePanel() {
         <label>GSTIN<input name="gstin" readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.gstin} /></label>
         <label>Project name<input name="projectName" required autoFocus={registeredCustomerSelected} defaultValue={prefilledCustomer?.projectName} placeholder="Required" /></label>
         <label>Project location<input name="projectLocation" required defaultValue={prefilledCustomer?.projectLocation} placeholder="Required" /></label>
-        <label>City<input name="city" readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.city} /></label>
-        <label>PIN code<input name="pinCode" readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.pinCode} /></label>
+        <CityPinCodeFields readOnly={customerDetailsLocked} initialCity={prefilledCustomer?.city} initialPinCode={prefilledCustomer?.pinCode} />
         <label>Customer type{customerDetailsLocked ? <input name="customerType" readOnly defaultValue={prefilledCustomer?.customerType || "end_user"} /> : <select name="customerType" defaultValue={prefilledCustomer?.customerType || "end_user"}><option value="end_user">End user</option><option value="contractor">Contractor</option><option value="consultant">Consultant</option><option value="dealer">Dealer</option><option value="other">Other</option></select>}</label>
         <label>Delivery preference<input name="deliveryPreference" readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.deliveryPreference} /></label>
         <label>Valid until<input name="validUntil" type="date" /></label>
