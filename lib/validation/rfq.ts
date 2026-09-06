@@ -9,6 +9,7 @@ export const rfqSchema = z.object({
   mobile: z.string().trim().min(7, "Please enter a valid mobile number.").max(30),
   email: z.union([z.literal(""), z.string().trim().email("Please enter a valid email address.")]).optional().default(""),
   city: z.string().trim().max(120).optional().default(""),
+  district: z.string().trim().max(120).optional().default(""),
   state: z.string().trim().max(120).optional().default(""),
   pinCode: z.string().trim().max(20).optional().default(""),
   projectLocation: z.string().trim().max(180).optional().default(""),

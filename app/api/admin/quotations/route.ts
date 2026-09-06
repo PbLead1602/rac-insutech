@@ -46,6 +46,7 @@ export async function POST(request: Request) {
       email: selectedCustomerDetail.customer.email || "",
       gstin: selectedCustomerDetail.customer.gstin || "",
       city: selectedCustomerDetail.customer.city || "",
+      district: selectedCustomerDetail.customer.district || "",
       state: selectedCustomerDetail.customer.state || "",
       pinCode: selectedCustomerDetail.customer.pinCode || "",
       billingAddress: selectedCustomerDetail.customer.billingAddress || "",

@@ -464,7 +464,7 @@ function QuoteModal({ initialProduct, onClose }: { initialProduct: string; onClo
         continuationToken: result.continuationToken || "",
         name: String(values.get("name") || "").trim(), company: String(values.get("company") || "").trim(),
         mobile: String(values.get("mobile") || "").trim(), email: String(values.get("email") || "").trim(),
-        city: String(values.get("city") || "").trim(), state: String(values.get("state") || "").trim(), pinCode: String(values.get("pinCode") || "").trim(),
+        city: String(values.get("city") || "").trim(), district: String(values.get("district") || "").trim(), state: String(values.get("state") || "").trim(), pinCode: String(values.get("pinCode") || "").trim(),
         projectLocation: String(values.get("projectLocation") || "").trim(), projectName: String(values.get("projectName") || "").trim(),
         product: String(values.get("product") || "").trim(), brand: String(values.get("brand") || "").trim(), quantity: String(values.get("quantity") || "").trim(),
         thickness: String(values.get("thickness") || "").trim(), application: String(values.get("application") || "").trim(), customerType: String(values.get("customerType") || "end_user") as "end_user" | "contractor" | "consultant" | "dealer" | "other", deliveryPreference: String(values.get("deliveryPreference") || "").trim(), message: String(values.get("message") || "").trim(),

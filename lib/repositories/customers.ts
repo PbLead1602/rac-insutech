@@ -35,7 +35,7 @@ export class CustomerConflictError extends Error {}
 function normalise(value?: string) { return value?.trim().toLowerCase() || ""; }
 function toCustomerRecord(row: Record<string, unknown>): CustomerRecord {
   return {
-    id: String(row.id), accountId: row.account_id ? String(row.account_id) : undefined, fullName: String(row.full_name || ""), company: row.company ? String(row.company) : undefined, phone: row.phone ? String(row.phone) : undefined, email: row.email ? String(row.email) : undefined, gstin: row.gstin ? String(row.gstin) : undefined, billingAddress: row.billing_address ? String(row.billing_address) : undefined, shippingAddress: row.shipping_address ? String(row.shipping_address) : undefined, city: row.city ? String(row.city) : undefined, state: row.state ? String(row.state) : undefined, pinCode: row.pin_code ? String(row.pin_code) : undefined, customerType: row.customer_type as CustomerType, notes: row.notes ? String(row.notes) : undefined, status: row.status as CustomerStatus, createdAt: String(row.created_at),
+    id: String(row.id), accountId: row.account_id ? String(row.account_id) : undefined, fullName: String(row.full_name || ""), company: row.company ? String(row.company) : undefined, phone: row.phone ? String(row.phone) : undefined, email: row.email ? String(row.email) : undefined, gstin: row.gstin ? String(row.gstin) : undefined, billingAddress: row.billing_address ? String(row.billing_address) : undefined, shippingAddress: row.shipping_address ? String(row.shipping_address) : undefined, city: row.city ? String(row.city) : undefined, district: row.district ? String(row.district) : undefined, state: row.state ? String(row.state) : undefined, pinCode: row.pin_code ? String(row.pin_code) : undefined, customerType: row.customer_type as CustomerType, notes: row.notes ? String(row.notes) : undefined, status: row.status as CustomerStatus, createdAt: String(row.created_at),
   };
 }
 
@@ -60,6 +60,7 @@ function quotationCustomerInput(customer: QuotationCustomer): CustomerInput {
     billingAddress: customer.billingAddress || "",
     shippingAddress: customer.shippingAddress || "",
     city: customer.city || "",
+    district: customer.district || "",
     state: customer.state || "",
     pinCode: customer.pinCode || "",
     customerType: customerTypeFromQuotation(customer.customerType),
@@ -137,7 +138,7 @@ export async function createAdminCustomer(input: CustomerInput): Promise<SaveCus
     if (duplicateError) throw new Error("Could not check for matching customers.");
     if (duplicates?.length) throw new CustomerConflictError("A customer already uses this email, phone number or GSTIN.");
   }
-    const { data, error } = await client.from("customers").insert({ account_id: input.accountId || null, full_name: input.fullName, company: input.company || null, phone: input.phone || null, email: input.email || null, gstin: input.gstin || null, billing_address: input.billingAddress || null, shipping_address: input.shippingAddress || null, city: input.city || null, state: input.state || null, pin_code: input.pinCode || null, customer_type: input.customerType, notes: input.notes || null, status: input.status }).select("*").single();
+    const { data, error } = await client.from("customers").insert({ account_id: input.accountId || null, full_name: input.fullName, company: input.company || null, phone: input.phone || null, email: input.email || null, gstin: input.gstin || null, billing_address: input.billingAddress || null, shipping_address: input.shippingAddress || null, city: input.city || null, district: input.district || null, state: input.state || null, pin_code: input.pinCode || null, customer_type: input.customerType, notes: input.notes || null, status: input.status }).select("*").single();
   if (error || !data) throw new Error("Could not create the customer.");
   return { customer: toCustomerRecord(data as Record<string, unknown>), mode };
 }
@@ -181,7 +182,7 @@ export async function updateAdminCustomer(id: string, patch: Partial<CustomerInp
   if (mode === "unconfigured") throw new Error("Customer storage is not configured.");
   const client = getSupabaseServiceClient();
   if (!client) throw new Error("Supabase service client is unavailable.");
-  const update = { ...(patch.accountId !== undefined ? { account_id: patch.accountId || null } : {}), ...(patch.fullName !== undefined ? { full_name: patch.fullName } : {}), ...(patch.company !== undefined ? { company: patch.company || null } : {}), ...(patch.phone !== undefined ? { phone: patch.phone || null } : {}), ...(patch.email !== undefined ? { email: patch.email || null } : {}), ...(patch.gstin !== undefined ? { gstin: patch.gstin || null } : {}), ...(patch.billingAddress !== undefined ? { billing_address: patch.billingAddress || null } : {}), ...(patch.shippingAddress !== undefined ? { shipping_address: patch.shippingAddress || null } : {}), ...(patch.city !== undefined ? { city: patch.city || null } : {}), ...(patch.state !== undefined ? { state: patch.state || null } : {}), ...(patch.pinCode !== undefined ? { pin_code: patch.pinCode || null } : {}), ...(patch.customerType !== undefined ? { customer_type: patch.customerType } : {}), ...(patch.notes !== undefined ? { notes: patch.notes || null } : {}), ...(patch.status !== undefined ? { status: patch.status } : {}) };
+  const update = { ...(patch.accountId !== undefined ? { account_id: patch.accountId || null } : {}), ...(patch.fullName !== undefined ? { full_name: patch.fullName } : {}), ...(patch.company !== undefined ? { company: patch.company || null } : {}), ...(patch.phone !== undefined ? { phone: patch.phone || null } : {}), ...(patch.email !== undefined ? { email: patch.email || null } : {}), ...(patch.gstin !== undefined ? { gstin: patch.gstin || null } : {}), ...(patch.billingAddress !== undefined ? { billing_address: patch.billingAddress || null } : {}), ...(patch.shippingAddress !== undefined ? { shipping_address: patch.shippingAddress || null } : {}), ...(patch.city !== undefined ? { city: patch.city || null } : {}), ...(patch.district !== undefined ? { district: patch.district || null } : {}), ...(patch.state !== undefined ? { state: patch.state || null } : {}), ...(patch.pinCode !== undefined ? { pin_code: patch.pinCode || null } : {}), ...(patch.customerType !== undefined ? { customer_type: patch.customerType } : {}), ...(patch.notes !== undefined ? { notes: patch.notes || null } : {}), ...(patch.status !== undefined ? { status: patch.status } : {}) };
   const { data, error } = await client.from("customers").update(update).eq("id", id).select("*").maybeSingle();
   if (error) throw new Error("Could not update the customer.");
   return data ? toCustomerRecord(data as Record<string, unknown>) : null;

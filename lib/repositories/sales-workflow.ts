@@ -51,6 +51,7 @@ export async function createQuotationEnquiry(
     mobile: customer.mobile,
     email: customer.email,
     city: customer.city,
+    district: customer.district,
     state: customer.state,
     pinCode: customer.pinCode,
     projectName: customer.projectName,

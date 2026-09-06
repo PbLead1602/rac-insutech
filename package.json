@@ -18,6 +18,8 @@
     "start:vinext": "wrangler dev --config dist/server/wrangler.json",
     "deploy:vinext": "vinext-cloudflare deploy --config dist/server/wrangler.json",
     "generate:supabase-bootstrap": "tsx scripts/generate-supabase-bootstrap.ts",
+    "import:india-post-locations": "node scripts/import-india-post-locations.mjs",
+    "generate:india-locations": "node scripts/generate-india-post-locations.mjs",
     "supabase:push:dry": "supabase db push --linked --dry-run",
     "supabase:push": "supabase db push --linked"
   },

@@ -11,6 +11,7 @@ export type RfqInput = {
   mobile: string;
   email?: string;
   city?: string;
+  district?: string;
   state?: string;
   pinCode?: string;
   projectLocation?: string;
@@ -100,6 +101,7 @@ export type CustomerRecord = {
   billingAddress?: string;
   shippingAddress?: string;
   city?: string;
+  district?: string;
   state?: string;
   pinCode?: string;
   customerType: CustomerType;
@@ -310,6 +312,7 @@ export type QuotationCustomer = {
   projectName?: string;
   projectLocation?: string;
   city?: string;
+  district?: string;
   state?: string;
   pinCode?: string;
   customerType?: "end_user" | "contractor" | "consultant" | "dealer" | "other";

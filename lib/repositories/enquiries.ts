@@ -94,6 +94,7 @@ export async function createEnquiry(
     mobile: enquiry.mobile,
     email: enquiry.email || null,
     city: enquiry.city || null,
+    district: enquiry.district || null,
     state: enquiry.state || null,
     pin_code: enquiry.pinCode || null,
     project_location: enquiry.projectLocation || null,
@@ -136,7 +137,7 @@ export function listDevelopmentEnquiries(): EnquiryRecord[] {
 
 function toEnquiryRecord(row: Record<string, unknown>): EnquiryRecord {
   return {
-    id: String(row.id), enquiryNumber: String(row.enquiry_number || row.id), name: String(row.name || ""), company: String(row.company || ""), mobile: String(row.mobile || ""), email: String(row.email || ""), city: String(row.city || ""), state: String(row.state || ""), pinCode: String(row.pin_code || ""), projectLocation: String(row.project_location || ""), projectName: String(row.project_name || ""), product: String(row.product_name || ""), brand: String(row.brand_name || ""), quantity: String(row.quantity || ""), thickness: String(row.thickness || ""), application: String(row.application_name || ""), customerType: row.customer_type as RfqInput["customerType"], deliveryPreference: String(row.delivery_preference || ""), message: String(row.message || ""), source: "website", status: row.status as EnquiryStatus, createdAt: String(row.created_at), customerId: row.customer_id ? String(row.customer_id) : undefined, accountId: row.account_id ? String(row.account_id) : undefined, projectId: row.project_id ? String(row.project_id) : undefined, followUpAt: row.follow_up_at ? String(row.follow_up_at) : undefined, followUpNote: row.follow_up_note ? String(row.follow_up_note) : undefined, internalNotes: row.internal_notes ? String(row.internal_notes) : undefined, lostReason: row.lost_reason ? String(row.lost_reason) : undefined,
+    id: String(row.id), enquiryNumber: String(row.enquiry_number || row.id), name: String(row.name || ""), company: String(row.company || ""), mobile: String(row.mobile || ""), email: String(row.email || ""), city: String(row.city || ""), district: String(row.district || ""), state: String(row.state || ""), pinCode: String(row.pin_code || ""), projectLocation: String(row.project_location || ""), projectName: String(row.project_name || ""), product: String(row.product_name || ""), brand: String(row.brand_name || ""), quantity: String(row.quantity || ""), thickness: String(row.thickness || ""), application: String(row.application_name || ""), customerType: row.customer_type as RfqInput["customerType"], deliveryPreference: String(row.delivery_preference || ""), message: String(row.message || ""), source: "website", status: row.status as EnquiryStatus, createdAt: String(row.created_at), customerId: row.customer_id ? String(row.customer_id) : undefined, accountId: row.account_id ? String(row.account_id) : undefined, projectId: row.project_id ? String(row.project_id) : undefined, followUpAt: row.follow_up_at ? String(row.follow_up_at) : undefined, followUpNote: row.follow_up_note ? String(row.follow_up_note) : undefined, internalNotes: row.internal_notes ? String(row.internal_notes) : undefined, lostReason: row.lost_reason ? String(row.lost_reason) : undefined,
   };
 }
 

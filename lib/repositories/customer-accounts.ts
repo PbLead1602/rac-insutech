@@ -22,7 +22,7 @@ function developmentStore(): DevelopmentStore {
 const accountStatuses: CustomerAccountStatus[] = ["pending_email_verification", "pending_admin_approval", "active", "rejected", "suspended", "archived"];
 const accountTypeValues = ["end_user", "contractor", "consultant", "dealer", "other"] as const;
 export type CustomerAccountInput = { fullName: string; companyName?: string; email: string; mobile: string; gstin?: string; customerType: typeof accountTypeValues[number] };
-export type CustomerProfileInput = { fullName: string; mobile: string; billingAddress?: string; shippingAddress?: string; city?: string; state?: string; pinCode?: string };
+export type CustomerProfileInput = { fullName: string; mobile: string; billingAddress?: string; shippingAddress?: string; city?: string; district?: string; state?: string; pinCode?: string };
 export type CustomerAccountContext = { account: CustomerAccount; customer?: CustomerRecord; mode: IntegrationMode };
 export type CustomerPortalData = { account: CustomerAccount; customer?: CustomerRecord; enquiries: EnquiryRecord[]; quotations: QuotationRecord[]; projects: import("@/lib/db/types").ProjectRecord[]; documents: import("@/lib/db/types").DocumentRecord[]; revisionRequests: import("@/lib/db/types").CustomerRevisionRequest[] };
 
@@ -43,7 +43,7 @@ function toAccount(row: Record<string, unknown>): CustomerAccount {
 }
 
 function toCustomer(row: Record<string, unknown>): CustomerRecord {
-  return { id: String(row.id), accountId: row.account_id ? String(row.account_id) : undefined, fullName: String(row.full_name || ""), company: row.company ? String(row.company) : undefined, phone: row.phone ? String(row.phone) : undefined, email: row.email ? String(row.email) : undefined, gstin: row.gstin ? String(row.gstin) : undefined, billingAddress: row.billing_address ? String(row.billing_address) : undefined, shippingAddress: row.shipping_address ? String(row.shipping_address) : undefined, city: row.city ? String(row.city) : undefined, state: row.state ? String(row.state) : undefined, pinCode: row.pin_code ? String(row.pin_code) : undefined, customerType: String(row.customer_type || "other") as CustomerRecord["customerType"], notes: row.notes ? String(row.notes) : undefined, status: String(row.status || "active") as CustomerRecord["status"], createdAt: String(row.created_at) };
+  return { id: String(row.id), accountId: row.account_id ? String(row.account_id) : undefined, fullName: String(row.full_name || ""), company: row.company ? String(row.company) : undefined, phone: row.phone ? String(row.phone) : undefined, email: row.email ? String(row.email) : undefined, gstin: row.gstin ? String(row.gstin) : undefined, billingAddress: row.billing_address ? String(row.billing_address) : undefined, shippingAddress: row.shipping_address ? String(row.shipping_address) : undefined, city: row.city ? String(row.city) : undefined, district: row.district ? String(row.district) : undefined, state: row.state ? String(row.state) : undefined, pinCode: row.pin_code ? String(row.pin_code) : undefined, customerType: String(row.customer_type || "other") as CustomerRecord["customerType"], notes: row.notes ? String(row.notes) : undefined, status: String(row.status || "active") as CustomerRecord["status"], createdAt: String(row.created_at) };
 }
 
 function accountToQuoteCustomer(account: CustomerAccount) {
@@ -257,7 +257,7 @@ export async function updateCustomerProfile(context: CustomerAccountContext, inp
     const accountIndex = developmentStore().accounts.findIndex((item) => item.id === context.account.id); if (accountIndex < 0) throw new Error("Customer account was not found.");
     const account = { ...context.account, fullName: input.fullName.trim(), mobile: input.mobile.trim(), updatedAt: now };
     developmentStore().accounts[accountIndex] = account;
-    const customer = await updateAdminCustomer(context.customer.id, { fullName: account.fullName, phone: account.mobile, billingAddress: input.billingAddress || "", shippingAddress: input.shippingAddress || "", city: input.city || "", state: input.state || "", pinCode: input.pinCode || "" });
+    const customer = await updateAdminCustomer(context.customer.id, { fullName: account.fullName, phone: account.mobile, billingAddress: input.billingAddress || "", shippingAddress: input.shippingAddress || "", city: input.city || "", district: input.district || "", state: input.state || "", pinCode: input.pinCode || "" });
     if (!customer) throw new Error("Customer profile was not found.");
     return { account, customer, mode };
   }
@@ -265,7 +265,7 @@ export async function updateCustomerProfile(context: CustomerAccountContext, inp
   const client = getSupabaseServiceClient(); if (!client) throw new Error("Supabase service client is unavailable.");
   const [{ data: accountRow, error: accountError }, { data: customerRow, error: customerError }] = await Promise.all([
     client.from("customer_accounts").update({ full_name: input.fullName.trim(), mobile: input.mobile.trim() }).eq("id", context.account.id).select("*").single(),
-    client.from("customers").update({ full_name: input.fullName.trim(), phone: input.mobile.trim(), billing_address: input.billingAddress || null, shipping_address: input.shippingAddress || null, city: input.city || null, state: input.state || null, pin_code: input.pinCode || null }).eq("id", context.customer.id).select("*").single(),
+    client.from("customers").update({ full_name: input.fullName.trim(), phone: input.mobile.trim(), billing_address: input.billingAddress || null, shipping_address: input.shippingAddress || null, city: input.city || null, district: input.district || null, state: input.state || null, pin_code: input.pinCode || null }).eq("id", context.customer.id).select("*").single(),
   ]);
   if (accountError || customerError || !accountRow || !customerRow) throw new Error("Could not update your customer profile.");
   return { account: toAccount(accountRow as Record<string, unknown>), customer: toCustomer(customerRow as Record<string, unknown>), mode };

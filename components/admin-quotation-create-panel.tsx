@@ -328,7 +328,7 @@ export default function AdminQuotationCreatePanel() {
     const invalidRow = rowCalculations.find((entry) => entry.error);
     if (invalidRow || (!configuredLines.length && !customBuiltUpItems.length)) { setError(invalidRow?.error || "Use Multiple selection or Custom Built-Up NBR to add at least one product configuration."); return; }
     const form = new FormData(event.currentTarget);
-    const customer = Object.fromEntries(["fullName", "company", "mobile", "email", "gstin", "projectName", "projectLocation", "city", "pinCode", "customerType", "deliveryPreference", "notes"].map((field) => [field, String(form.get(field) || "")]));
+    const customer = Object.fromEntries(["fullName", "company", "mobile", "email", "gstin", "projectName", "projectLocation", "city", "district", "state", "pinCode", "customerType", "deliveryPreference", "notes"].map((field) => [field, String(form.get(field) || "")]));
     const payload = { customerId: customerMode === "registered" && registeredCustomerSelected ? selectedCustomer?.id : undefined, customer, items: configuredLines.map(({ amount: _amount, provisional: _provisional, ...line }) => line), customBuiltUpItems: customBuiltUpItems.map(({ id: _id, ...item }) => item), gstRate, enquiryId: enquiryId || undefined, validUntil: String(form.get("validUntil") || ""), internalNotes: String(form.get("internalNotes") || "") };
     setBusy(true); setError("");
     try {
@@ -340,7 +340,7 @@ export default function AdminQuotationCreatePanel() {
     } finally { setBusy(false); }
   };
 
-  const prefilledCustomer = selectedCustomer ? { fullName: selectedCustomer.fullName, company: selectedCustomer.company || selectedCustomer.fullName, mobile: selectedCustomer.phone, email: selectedCustomer.email, gstin: selectedCustomer.gstin, projectName: enquiry?.projectName || "", projectLocation: enquiry?.projectLocation || "", city: selectedCustomer.city, pinCode: selectedCustomer.pinCode, customerType: quotationCustomerTypeForRecord(selectedCustomer.customerType), deliveryPreference: "" } : enquiry ? { fullName: enquiry.name, company: enquiry.company, mobile: enquiry.mobile, email: enquiry.email, gstin: "", projectName: enquiry.projectName, projectLocation: enquiry.projectLocation, city: enquiry.city, pinCode: enquiry.pinCode, customerType: enquiry.customerType || "end_user", deliveryPreference: enquiry.deliveryPreference } : null;
+  const prefilledCustomer = selectedCustomer ? { fullName: selectedCustomer.fullName, company: selectedCustomer.company || selectedCustomer.fullName, mobile: selectedCustomer.phone, email: selectedCustomer.email, gstin: selectedCustomer.gstin, projectName: enquiry?.projectName || "", projectLocation: enquiry?.projectLocation || "", city: selectedCustomer.city, district: selectedCustomer.district, state: selectedCustomer.state, pinCode: selectedCustomer.pinCode, customerType: quotationCustomerTypeForRecord(selectedCustomer.customerType), deliveryPreference: "" } : enquiry ? { fullName: enquiry.name, company: enquiry.company, mobile: enquiry.mobile, email: enquiry.email, gstin: "", projectName: enquiry.projectName, projectLocation: enquiry.projectLocation, city: enquiry.city, district: enquiry.district, state: enquiry.state, pinCode: enquiry.pinCode, customerType: enquiry.customerType || "end_user", deliveryPreference: enquiry.deliveryPreference } : null;
   const customerDetailsLocked = customerMode === "registered";
   const registeredCustomerSelected = customerMode === "registered" && Boolean(linkedRegisteredCustomer);
   return <div className="admin-os-content">
@@ -359,7 +359,7 @@ export default function AdminQuotationCreatePanel() {
         <label>GSTIN<input name="gstin" readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.gstin} /></label>
         <label>Project name<input name="projectName" required autoFocus={registeredCustomerSelected} defaultValue={prefilledCustomer?.projectName} placeholder="Required" /></label>
         <label>Project location<input name="projectLocation" required defaultValue={prefilledCustomer?.projectLocation} placeholder="Required" /></label>
-        <IndiaLocationFields fields={["city", "pinCode"]} readOnly={customerDetailsLocked} defaultValue={{ city: prefilledCustomer?.city, pinCode: prefilledCustomer?.pinCode }} />
+        <IndiaLocationFields readOnly={customerDetailsLocked} defaultValue={{ state: prefilledCustomer?.state, district: prefilledCustomer?.district, city: prefilledCustomer?.city, pinCode: prefilledCustomer?.pinCode }} />
         <label>Customer type{customerDetailsLocked ? <input name="customerType" readOnly defaultValue={prefilledCustomer?.customerType || "end_user"} /> : <select name="customerType" defaultValue={prefilledCustomer?.customerType || "end_user"}><option value="end_user">End user</option><option value="contractor">Contractor</option><option value="consultant">Consultant</option><option value="dealer">Dealer</option><option value="other">Other</option></select>}</label>
         <label>Delivery preference<input name="deliveryPreference" readOnly={customerDetailsLocked} defaultValue={prefilledCustomer?.deliveryPreference} /></label>
         <label>Valid until<input name="validUntil" type="date" /></label>
