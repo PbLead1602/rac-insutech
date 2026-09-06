@@ -13,7 +13,6 @@ const adminCustomerBaseSchema = z.object({
   billingAddress: optionalText,
   shippingAddress: optionalText,
   city: z.string().trim().max(120).optional().default(""),
-  district: z.string().trim().max(120).optional().default(""),
   state: z.string().trim().max(120).optional().default(""),
   pinCode: z.string().trim().max(20).optional().default(""),
   customerType: z.enum(customerTypes).default("other"),

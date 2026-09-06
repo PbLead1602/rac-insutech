@@ -7,7 +7,6 @@ import { ArrowRight, FileText, MessageCircle, Plus, ShieldCheck, Trash2 } from "
 import { CatalogueFooter, CatalogueHeader } from "@/components/catalogue-header";
 import { TurnstileWidget } from "@/components/turnstile";
 import { BuiltUpNbrConfigurator, type CustomBuiltUpNbrDraft } from "@/components/built-up-nbr-configurator";
-import { IndiaLocationFields } from "@/components/india-location-fields";
 import { whatsappContactHref } from "@/lib/contact";
 import { customerFetch } from "@/lib/auth/customer-client";
 import { env } from "@/lib/env";
@@ -36,13 +35,13 @@ type SimilarQuotationResponse = {
   message?: string;
   quotation?: {
     quoteNumber: string;
-    customer: { projectName?: string; projectLocation?: string; city?: string; district?: string; state?: string; pinCode?: string; deliveryPreference?: string; notes?: string };
+    customer: { projectName?: string; projectLocation?: string; city?: string; state?: string; pinCode?: string; deliveryPreference?: string; notes?: string };
     items: Array<{ variantId: string; requestedQuantity: number; requestedUnit: string }>;
   };
 };
 type Customer = {
   fullName: string; company: string; mobile: string; email: string; gstin: string; projectName: string;
-  projectLocation: string; city: string; district: string; state: string; pinCode: string; customerType: "end_user" | "contractor" | "consultant" | "dealer" | "other"; deliveryPreference: string; billingAddress: string; shippingAddress: string; notes: string;
+  projectLocation: string; city: string; state: string; pinCode: string; customerType: "end_user" | "contractor" | "consultant" | "dealer" | "other"; deliveryPreference: string; billingAddress: string; shippingAddress: string; notes: string;
 };
 
 const currency = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -120,7 +119,7 @@ function toggleSelection(values: string[], value: string) {
 function customerFromDraft(draft: QuoteLeadDraft): Customer {
   return {
     fullName: draft.name, company: draft.company, mobile: draft.mobile, email: draft.email, city: draft.city,
-    district: draft.district, state: draft.state, projectLocation: draft.projectLocation, notes: draft.message, gstin: "", projectName: draft.projectName, pinCode: draft.pinCode, customerType: draft.customerType, deliveryPreference: draft.deliveryPreference, billingAddress: "", shippingAddress: "",
+    state: draft.state, projectLocation: draft.projectLocation, notes: draft.message, gstin: "", projectName: draft.projectName, pinCode: draft.pinCode, customerType: draft.customerType, deliveryPreference: draft.deliveryPreference, billingAddress: "", shippingAddress: "",
   };
 }
 
@@ -156,12 +155,12 @@ function GenerateQuotationWorkspace() {
     (async () => {
       try {
         const response = await customerFetch("/api/customer-auth/me", { cache: "no-store" });
-        const result = await response.json() as { ok?: boolean; message?: string; account?: { status?: string; fullName: string; companyName?: string; mobile: string; email: string; gstin?: string; customerType: Customer["customerType"] }; customer?: { fullName?: string; company?: string; phone?: string; email?: string; gstin?: string; city?: string; district?: string; state?: string; pinCode?: string } };
+        const result = await response.json() as { ok?: boolean; message?: string; account?: { status?: string; fullName: string; companyName?: string; mobile: string; email: string; gstin?: string; customerType: Customer["customerType"] }; customer?: { fullName?: string; company?: string; phone?: string; email?: string; gstin?: string; city?: string; state?: string; pinCode?: string } };
         if (!response.ok || !result.account) throw new Error(result.message || "Please sign in to continue.");
         if (result.account.status !== "active") { router.replace("/account/pending-approval"); return; }
         if (!active) return;
-        const lead = draft ? customerFromDraft(draft) : { fullName: "", company: "", mobile: "", email: "", gstin: "", projectName: "", projectLocation: "", city: "", district: "", state: "", pinCode: "", customerType: "end_user" as const, deliveryPreference: "", billingAddress: "", shippingAddress: "", notes: "" };
-        setCustomerOverride({ ...lead, fullName: result.customer?.fullName || result.account.fullName, company: result.customer?.company || result.account.companyName || result.account.fullName, mobile: result.customer?.phone || result.account.mobile, email: result.customer?.email || result.account.email, gstin: result.customer?.gstin || result.account.gstin || "", city: lead.city || result.customer?.city || "", district: lead.district || result.customer?.district || "", state: lead.state || result.customer?.state || "", pinCode: lead.pinCode || result.customer?.pinCode || "", customerType: result.account.customerType || lead.customerType });
+        const lead = draft ? customerFromDraft(draft) : { fullName: "", company: "", mobile: "", email: "", gstin: "", projectName: "", projectLocation: "", city: "", state: "", pinCode: "", customerType: "end_user" as const, deliveryPreference: "", billingAddress: "", shippingAddress: "", notes: "" };
+        setCustomerOverride({ ...lead, fullName: result.customer?.fullName || result.account.fullName, company: result.customer?.company || result.account.companyName || result.account.fullName, mobile: result.customer?.phone || result.account.mobile, email: result.customer?.email || result.account.email, gstin: result.customer?.gstin || result.account.gstin || "", city: lead.city || result.customer?.city || "", state: lead.state || result.customer?.state || "", pinCode: lead.pinCode || result.customer?.pinCode || "", customerType: result.account.customerType || lead.customerType });
         setAccessState("allowed");
       } catch (error) {
         if (!active) return;
@@ -193,7 +192,6 @@ function GenerateQuotationWorkspace() {
           projectName: result.quotation!.customer.projectName || current.projectName,
           projectLocation: result.quotation!.customer.projectLocation || current.projectLocation,
           city: result.quotation!.customer.city || current.city,
-          district: result.quotation!.customer.district || current.district,
           state: result.quotation!.customer.state || current.state,
           pinCode: result.quotation!.customer.pinCode || current.pinCode,
           deliveryPreference: result.quotation!.customer.deliveryPreference || current.deliveryPreference,
@@ -510,7 +508,8 @@ function GenerateQuotationWorkspace() {
           <label>Full name<input required value={customer.fullName} readOnly aria-readonly="true" /></label><label>Company<input required value={customer.company} readOnly aria-readonly="true" /></label>
           <label>Mobile<input required type="tel" value={customer.mobile} readOnly aria-readonly="true" /></label><label>Email<input required type="email" value={customer.email} readOnly aria-readonly="true" /></label>
           <label>Project name<input required value={customer.projectName} onChange={(event) => updateCustomer("projectName", event.target.value)} placeholder="Required" /></label><label>Project location<input required value={customer.projectLocation} onChange={(event) => updateCustomer("projectLocation", event.target.value)} placeholder="Required" /></label>
-          <IndiaLocationFields value={{ state: customer.state, district: customer.district, city: customer.city, pinCode: customer.pinCode }} onChange={(location) => setCustomerOverride((current) => current ? { ...current, ...location } : current)} /><label>GSTIN<input value={customer.gstin} readOnly aria-readonly="true" /></label>
+          <label>City<input value={customer.city} onChange={(event) => updateCustomer("city", event.target.value)} placeholder="Optional" /></label><label>State<input value={customer.state || ""} onChange={(event) => updateCustomer("state", event.target.value)} placeholder="Optional" /></label>
+          <label>PIN code<input value={customer.pinCode} onChange={(event) => updateCustomer("pinCode", event.target.value)} placeholder="Optional" /></label><label>GSTIN<input value={customer.gstin} readOnly aria-readonly="true" /></label>
           <label>Customer type<select value={customer.customerType} disabled><option value="end_user">End user</option><option value="contractor">Contractor</option><option value="consultant">Consultant</option><option value="dealer">Dealer</option><option value="other">Other</option></select></label>
           <label>Delivery preference<input value={customer.deliveryPreference} onChange={(event) => updateCustomer("deliveryPreference", event.target.value)} placeholder="Optional" /></label><label className="quotation-notes">Project notes<textarea value={customer.notes} onChange={(event) => updateCustomer("notes", event.target.value)} placeholder="Application, temperature range, delivery or drawing reference" rows={3} /></label>
           <label className="quotation-notes">Billing address<textarea value={customer.billingAddress || ""} onChange={(event) => updateCustomer("billingAddress", event.target.value)} placeholder="Optional billing address" rows={3} /></label><label className="quotation-notes">Shipping address<textarea value={customer.shippingAddress || ""} onChange={(event) => updateCustomer("shippingAddress", event.target.value)} placeholder="Optional delivery address" rows={3} /></label>

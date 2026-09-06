@@ -26,7 +26,6 @@ export const quotationCustomerSchema = z.object({
   projectName: z.string().trim().min(2, "Enter the project name.").max(180),
   projectLocation: z.string().trim().min(2, "Enter the project location.").max(220),
   city: z.string().trim().max(120).optional().default(""),
-  district: z.string().trim().max(120).optional().default(""),
   state: z.string().trim().max(120).optional().default(""),
   pinCode: z.string().trim().max(20).optional().default(""),
   customerType: z.enum(["end_user", "contractor", "consultant", "dealer", "other"]).optional(),

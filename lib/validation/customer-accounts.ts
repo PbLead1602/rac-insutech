@@ -21,7 +21,6 @@ export const customerProfileSchema = z.object({
   billingAddress: z.string().trim().max(2000).optional().default(""),
   shippingAddress: z.string().trim().max(2000).optional().default(""),
   city: z.string().trim().max(120).optional().default(""),
-  district: z.string().trim().max(120).optional().default(""),
   state: z.string().trim().max(120).optional().default(""),
   pinCode: z.string().trim().max(20).optional().default(""),
 });

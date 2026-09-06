@@ -7,7 +7,6 @@ export type QuoteLeadDraft = {
   mobile: string;
   email: string;
   city: string;
-  district: string;
   state: string;
   pinCode: string;
   projectLocation: string;
@@ -53,7 +52,6 @@ export function parseQuoteLeadDraft(value: string | null): QuoteLeadDraft | null
       mobile: draft.mobile,
       email: draft.email,
       city: draft.city || "",
-      district: draft.district || "",
       state: draft.state || "",
       pinCode: draft.pinCode || "",
       projectLocation: draft.projectLocation || "",
