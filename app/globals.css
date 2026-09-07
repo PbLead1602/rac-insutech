@@ -623,17 +623,53 @@ section[id], article[id] { scroll-margin-top: 108px; }
   .admin-manual-quotation > .admin-nitrile-insulation-type > label { white-space: normal; }
 }
 
-/* Manual quotation form sequence: recipient first, then configuration. */
+/* Manual quotation sequence mirrors the customer Phase 1 builder. Customer
+   details stay first; Class O exposes its insulation decision before the
+   standard Multiple Selection card. In Custom mode, its calculator replaces
+   Multiple Selection and completed custom items are reviewed only after
+   Configuration Lines. */
 .admin-manual-quotation > .admin-manual-customer-details { order: 1; }
-.admin-manual-quotation > .admin-multiple-selection { order: 2; }
-.admin-manual-quotation > .admin-selected-configurations { order: 3; }
-.admin-manual-quotation > .admin-nitrile-insulation-type { order: 4; }
-.admin-manual-quotation > .built-up-nbr-basket { order: 5; }
-.admin-manual-quotation > .admin-manual-commercial-details { order: 6; }
-.admin-manual-quotation > .admin-revision-total { order: 7; }
+.admin-manual-quotation > .admin-nitrile-insulation-type { order: 2; }
+.admin-manual-quotation > .built-up-nbr { order: 3; }
+.admin-manual-quotation > .admin-multiple-selection { order: 4; }
+.admin-manual-quotation > .admin-selected-configurations { order: 5; }
+.admin-manual-quotation > .built-up-nbr-basket { order: 6; }
+.admin-manual-quotation > .admin-manual-commercial-details { order: 7; }
+.admin-manual-quotation > .admin-revision-total { order: 8; }
 .admin-manual-quotation > .admin-form-error,
-.admin-manual-quotation > .admin-records-message { order: 8; }
-.admin-manual-quotation > .admin-customer-form-actions { order: 9; }
+.admin-manual-quotation > .admin-records-message { order: 9; }
+.admin-manual-quotation > .admin-customer-form-actions { order: 10; }
+
+/* A single compact rhythm prevents nested card margins from creating gaps
+   that do not exist in the customer quotation builder. */
+.admin-manual-quotation > .admin-nitrile-insulation-type,
+.admin-manual-quotation > .built-up-nbr,
+.admin-manual-quotation > .admin-multiple-selection,
+.admin-manual-quotation > .admin-selected-configurations,
+.admin-manual-quotation > .built-up-nbr-basket { margin: 0; }
+
+/* Thickness choices stay compact; pipe/roll choices keep four readable desktop columns. */
+.admin-manual-quotation .admin-multiple-thickness-checks > div { display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; width:100%; }
+.admin-manual-quotation .admin-multiple-thickness-checks label,
+.admin-manual-quotation .admin-size-packing-checks label { box-sizing:border-box; min-height:35px; padding:0 12px; display:inline-flex; align-items:center; justify-content:flex-start; gap:10px; border-radius:999px; white-space:nowrap; line-height:1.15; }
+.admin-manual-quotation .admin-multiple-thickness-checks label { width:auto; min-width:0; padding:0 14px; flex:0 0 auto; }
+.admin-manual-quotation .admin-size-packing-checks > div { display:flex; flex-wrap:wrap; align-items:center; gap:8px 10px; width:100%; }
+.admin-manual-quotation .admin-size-packing-checks--sheet > div { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px 12px; }
+.admin-manual-quotation .admin-size-packing-checks--sheet label { width:100%; min-width:0; min-height:44px; padding:6px 14px; display:flex; align-items:center; gap:12px; white-space:normal; line-height:1.15; text-align:left; }
+.admin-manual-quotation .admin-size-packing-checks--tape label { width:auto; min-width:190px; min-height:40px; padding:0 14px; flex:0 0 auto; white-space:nowrap; }
+.admin-manual-quotation .admin-size-packing-checks--drum label { width:auto; min-width:110px; min-height:38px; padding:0 14px; flex:0 0 auto; white-space:nowrap; }
+.admin-manual-quotation .admin-multiple-pipe-size-checks > div { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px 14px; width:100%; }
+.admin-manual-quotation .admin-multiple-pipe-size-checks label { box-sizing:border-box; width:100%; min-width:0; min-height:35px; padding:0 12px; display:flex; align-items:center; justify-content:flex-start; gap:14px; border-radius:999px; white-space:nowrap; overflow:visible; }
+.admin-manual-quotation .admin-multiple-thickness-checks input,
+.admin-manual-quotation .admin-size-packing-checks input { width:auto; min-width:0; flex:0 0 auto; }
+.admin-manual-quotation .admin-multiple-pipe-size-checks input { width:auto; min-width:0; flex:0 0 auto; margin:0; }
+.admin-manual-quotation .admin-multiple-pipe-size-checks label > span { min-width:0; flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; line-height:1.2; }
+@media (max-width:899px) { .admin-manual-quotation .admin-size-packing-checks--sheet > div { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:599px) { .admin-manual-quotation .admin-size-packing-checks--sheet > div { grid-template-columns:1fr; } }
+@media (max-width:1199px) { .admin-manual-quotation .admin-multiple-pipe-size-checks > div { grid-template-columns:repeat(3,minmax(0,1fr)); } }
+@media (max-width:899px) { .admin-manual-quotation .admin-multiple-pipe-size-checks > div { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:599px) { .admin-manual-quotation .admin-multiple-pipe-size-checks > div { grid-template-columns:1fr; } }
+@media (max-width:599px) { .admin-manual-quotation .admin-multiple-pipe-size-checks label { width:100%; min-height:44px; height:auto; padding-top:7px; padding-bottom:7px; white-space:normal; }.admin-manual-quotation .admin-multiple-pipe-size-checks label > span { white-space:normal; overflow:visible; text-overflow:clip; overflow-wrap:anywhere; } }
 
 /* Recipient selection keeps Customer Record & Analysis data separate from manual entry. */
 .admin-manual-quotation .admin-recipient-mode { grid-column: 1 / -1; min-width: 0; margin: 0; padding: 13px 15px 15px; border: 1px solid #cfe3ef; border-radius: 11px; background: linear-gradient(110deg,#f5fbff,#f6fcfa); }
