@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, Plus, Trash2 } from "lucide-react";
+import { ArrowRight, ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { adminFetch } from "@/lib/auth/admin-client";
 import { BuiltUpNbrConfigurator, type CustomBuiltUpNbrDraft } from "@/components/built-up-nbr-configurator";
 import type { CustomerRecord, EnquiryRecord, QuotationRecord } from "@/lib/db/types";
@@ -116,6 +116,7 @@ export default function AdminQuotationCreatePanel() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [configurationRows, setConfigurationRows] = useState<ConfigurationRow[]>([]);
+  const [expandedMobileConfigurationLineId, setExpandedMobileConfigurationLineId] = useState<string | null>(null);
   const [batchSelection, setBatchSelection] = useState<BatchSelection>(() => initialBatchSelection("xlpe-sheet"));
   const [nitrileMode, setNitrileMode] = useState<"standard" | "custom">("standard");
   const [customBuiltUpItems, setCustomBuiltUpItems] = useState<AdminCustomBuiltUpDraft[]>([]);
@@ -260,6 +261,7 @@ export default function AdminQuotationCreatePanel() {
     });
     if (!additions.length) { setError("No valid Rate Card configurations matched that selection. Adjust the options and try again."); return; }
     setConfigurationRows((current) => [...current, ...additions]);
+    setExpandedMobileConfigurationLineId(additions[additions.length - 1].id);
     setMessage(`${additions.length} configuration line${additions.length === 1 ? " was" : "s were"} added from the approved Rate Card.`);
   };
 
@@ -300,6 +302,7 @@ export default function AdminQuotationCreatePanel() {
 
   const removeRow = (rowId: string) => {
     setConfigurationRows((current) => current.filter((row) => row.id !== rowId));
+    setExpandedMobileConfigurationLineId((current) => current === rowId ? null : current);
   };
 
   const registeredCompanies = useMemo(() => [...new Set(registeredCustomers.map(registeredCustomerCompany))].sort((left, right) => left.localeCompare(right)), [registeredCustomers]);
@@ -396,30 +399,61 @@ export default function AdminQuotationCreatePanel() {
       </section>
       {customBuiltUpEntries.length > 0 && <section ref={builtUpBasketRef} className="built-up-nbr-basket"><div><p className="catalogue-kicker"><span /> CUSTOM BUILT-UP NBR</p><h3>Custom sheet-built quotation items</h3></div>{customBuiltUpEntries.map((entry) => { const { item, calculation } = entry; return <article key={item.id}><div><strong>Custom {item.baseDiameterMm} mm Dia × {item.requiredTotalThicknessMm} mm Built-Up NBR</strong><span>{item.pipeLengthM} m · {item.materialClass} · Admin setting wastage {builtUpNbrWastagePercent}%</span></div><div className="built-up-nbr-layer-pricing" aria-label="Layer-wise supply quantity, rate and amount">{item.layers.map((layer, index) => { const variant = getQuotationVariant(layer.variantId); const calculated = calculation?.layers[index]; return <div key={`${layer.variantId}-${index}`}><strong>Layer {index + 1}<small>{variant ? `${variant.thickness} · ${variant.lamination}` : "Sheet configuration pending"}</small></strong><span>Supply qty <b>{calculated ? `${calculated.quotedAreaM2.toFixed(2)} m²` : "—"}</b></span><span>Rate <b>{calculated?.rate !== undefined ? `${currency.format(calculated.rate)} / m²` : "Pending"}</b></span><span>Amount <b>{calculated?.amount !== undefined ? currency.format(calculated.amount) : "Pending"}</b></span></div>; })}</div><div className="built-up-nbr-basket-total"><span>{calculation ? `Finished OD ${calculation.finishedOuterDiameterMm.toFixed(2)} mm · ${calculation.totalQuotedAreaM2.toFixed(2)} m² sheet` : entry.error}</span><strong>Grouped total: {item.overrideAmount !== undefined ? currency.format(item.overrideAmount) : calculation?.basicAmount !== undefined ? currency.format(calculation.basicAmount) : "Rate pending"}</strong></div><div className="admin-built-up-override"><label>Admin override basic amount (optional)<input type="number" min="0" step="0.01" value={item.overrideAmount ?? ""} onChange={(event) => setCustomBuiltUpItems((current) => current.map((currentItem) => currentItem.id === item.id ? { ...currentItem, overrideAmount: event.target.value === "" ? undefined : Number(event.target.value) } : currentItem))} placeholder="Use calculated amount" /></label>{item.overrideAmount !== undefined && <label>Override reason<textarea value={item.overrideReason || ""} onChange={(event) => setCustomBuiltUpItems((current) => current.map((currentItem) => currentItem.id === item.id ? { ...currentItem, overrideReason: event.target.value } : currentItem))} required placeholder="Why is this commercial amount different?" /></label>}</div><footer><button type="button" onClick={() => setEditingBuiltUpItem(item)}>Edit</button><button type="button" onClick={() => setCustomBuiltUpItems((current) => [...current, { ...item, id: `built-up-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, layers: item.layers.map((layer) => ({ ...layer })) }])}>Duplicate</button><button type="button" onClick={() => setCustomBuiltUpItems((current) => current.filter((currentItem) => currentItem.id !== item.id))}><Trash2 size={14} />Remove</button></footer></article>; })}</section>}
       <section className="admin-selected-configurations" aria-labelledby="admin-selected-configurations-title">
-        <div className="admin-configuration-heading"><p>CONFIGURATION LINES</p><h3 id="admin-selected-configurations-title">Selected configurations</h3><span>Select a valid product, class, size and facing for each line. Quantity and the Admin rate can be adjusted before generating the quotation.</span></div>
-        {configurationRows.length ? <div className="admin-selected-configurations-scroll" tabIndex={0} aria-label="Editable quotation configuration table"><table><thead><tr><th>Sr No</th><th>Product</th><th>Thickness</th><th>Lamination</th><th>Material class</th><th>Size / packing</th><th>Order quantity</th><th>Quantity unit</th><th>Rate / unit</th><th>Subtotal</th><th>Action</th></tr></thead><tbody>{rowCalculations.map((entry, index) => {
-          const { row, variant, line, error } = entry;
-          const { configuration } = row;
-          const materialClasses = quoteOptions(row.productId, "materialClass");
-          const thicknesses = quoteOptions(row.productId, "thickness", { materialClass: configuration.materialClass });
-          const sizes = quoteOptions(row.productId, "size", { materialClass: configuration.materialClass, thickness: configuration.thickness });
-          const laminations = quoteOptions(row.productId, "lamination", configuration);
-          const units = orderUnitOptions(row.productId, variant);
-          const rate = row.rateOverride ?? variant?.rate;
-          return <tr key={row.id}>
-            <td className="admin-configuration-row-number"><span aria-label={`Line ${index + 1}`}>{index + 1}</span></td>
-            <td className="admin-configuration-product"><select aria-label={`Product for row ${index + 1}`} value={row.productId} onChange={(event) => changeRowProduct(row.id, event.target.value as QuoteProductId)}>{quotationProducts.map((product) => <option value={product.id} key={product.id}>{product.name}</option>)}</select></td>
-            <td className="admin-configuration-thickness"><select aria-label={`Thickness for row ${index + 1}`} title={`Thickness: ${configuration.thickness}`} value={configuration.thickness} onChange={(event) => updateRowConfiguration(row.id, "thickness", event.target.value)}>{thicknesses.map((value) => <option key={value} value={value}>{value}</option>)}</select></td>
-            <td><select aria-label={`Lamination for row ${index + 1}`} value={configuration.lamination} onChange={(event) => updateRowConfiguration(row.id, "lamination", event.target.value)}>{laminations.map((value) => <option key={value} value={value}>{value}</option>)}</select></td>
-            <td><select aria-label={`Material class for row ${index + 1}`} value={configuration.materialClass} onChange={(event) => updateRowConfiguration(row.id, "materialClass", event.target.value)}>{materialClasses.map((value) => <option key={value} value={value}>{value}</option>)}</select></td>
-            <td><select aria-label={`Size or packing for row ${index + 1}`} value={configuration.size} onChange={(event) => updateRowConfiguration(row.id, "size", event.target.value)}>{sizes.map((value) => <option key={value} value={value}>{value}</option>)}</select></td>
-            <td><input aria-label={`Order quantity for row ${index + 1}`} type="number" min="1" step="1" value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} /></td>
-            <td><select aria-label={`Quantity unit for row ${index + 1}`} value={row.orderUnit} onChange={(event) => updateRow(row.id, { orderUnit: event.target.value as QuoteOrderUnit })}>{units.map((unit) => <option value={unit.value} key={unit.value}>{unit.label}</option>)}</select></td>
-            <td className="admin-configuration-rate"><input aria-label={`Rate for row ${index + 1}`} type="number" min="0" step="0.00001" value={rate ?? ""} onChange={(event) => updateRow(row.id, { rateOverride: event.target.value === "" ? undefined : Number(event.target.value) })} /><small>{variant ? `per ${variant.rateUnit}` : error || "Select configuration"}</small></td>
-            <td className="admin-configuration-subtotal"><strong>{line ? currency.format(line.amount) : "-"}</strong><small>{error || line?.technicalQuantity}</small></td>
-            <td className="admin-configuration-remove"><button type="button" onClick={() => removeRow(row.id)} aria-label="Remove quotation line" title="Remove line"><Trash2 size={14} /></button></td>
-          </tr>;
-        })}</tbody></table></div> : <p className="admin-selected-configurations-empty">No product configurations yet. Use <strong>Multiple selection</strong> above to select thicknesses and add your first quotation line.</p>}
+        <div className="admin-configuration-heading admin-configuration-heading--desktop"><p>CONFIGURATION LINES</p><h3 id="admin-selected-configurations-title">Selected configurations</h3><span>Select a valid product, class, size and facing for each line. Quantity and the Admin rate can be adjusted before generating the quotation.</span></div>
+        <div className="admin-mobile-configuration-heading"><div><h3>Configuration Lines ({configurationRows.length})</h3><p>Add and configure your product specifications</p></div></div>
+        {configurationRows.length ? <>
+          <div className="admin-selected-configurations-scroll desktop-configuration-table" tabIndex={0} aria-label="Editable quotation configuration table"><table><thead><tr><th>Sr No</th><th>Product</th><th>Thickness</th><th>Lamination</th><th>Material class</th><th>Size / packing</th><th>Order quantity</th><th>Quantity unit</th><th>Rate / unit</th><th>Subtotal</th><th>Action</th></tr></thead><tbody>{rowCalculations.map((entry, index) => {
+            const { row, variant, line, error } = entry;
+            const { configuration } = row;
+            const materialClasses = quoteOptions(row.productId, "materialClass");
+            const thicknesses = quoteOptions(row.productId, "thickness", { materialClass: configuration.materialClass });
+            const sizes = quoteOptions(row.productId, "size", { materialClass: configuration.materialClass, thickness: configuration.thickness });
+            const laminations = quoteOptions(row.productId, "lamination", configuration);
+            const units = orderUnitOptions(row.productId, variant);
+            const rate = row.rateOverride ?? variant?.rate;
+            return <tr key={row.id}>
+              <td className="admin-configuration-row-number"><span aria-label={`Line ${index + 1}`}>{index + 1}</span></td>
+              <td className="admin-configuration-product"><select aria-label={`Product for row ${index + 1}`} value={row.productId} onChange={(event) => changeRowProduct(row.id, event.target.value as QuoteProductId)}>{quotationProducts.map((product) => <option value={product.id} key={product.id}>{product.name}</option>)}</select></td>
+              <td className="admin-configuration-thickness"><select aria-label={`Thickness for row ${index + 1}`} title={`Thickness: ${configuration.thickness}`} value={configuration.thickness} onChange={(event) => updateRowConfiguration(row.id, "thickness", event.target.value)}>{thicknesses.map((value) => <option key={value} value={value}>{value}</option>)}</select></td>
+              <td><select aria-label={`Lamination for row ${index + 1}`} value={configuration.lamination} onChange={(event) => updateRowConfiguration(row.id, "lamination", event.target.value)}>{laminations.map((value) => <option key={value} value={value}>{value}</option>)}</select></td>
+              <td><select aria-label={`Material class for row ${index + 1}`} value={configuration.materialClass} onChange={(event) => updateRowConfiguration(row.id, "materialClass", event.target.value)}>{materialClasses.map((value) => <option key={value} value={value}>{value}</option>)}</select></td>
+              <td><select aria-label={`Size or packing for row ${index + 1}`} value={configuration.size} onChange={(event) => updateRowConfiguration(row.id, "size", event.target.value)}>{sizes.map((value) => <option key={value} value={value}>{value}</option>)}</select></td>
+              <td><input aria-label={`Order quantity for row ${index + 1}`} type="number" min="1" step="1" value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} /></td>
+              <td><select aria-label={`Quantity unit for row ${index + 1}`} value={row.orderUnit} onChange={(event) => updateRow(row.id, { orderUnit: event.target.value as QuoteOrderUnit })}>{units.map((unit) => <option value={unit.value} key={unit.value}>{unit.label}</option>)}</select></td>
+              <td className="admin-configuration-rate"><input aria-label={`Rate for row ${index + 1}`} type="number" min="0" step="0.00001" value={rate ?? ""} onChange={(event) => updateRow(row.id, { rateOverride: event.target.value === "" ? undefined : Number(event.target.value) })} /><small>{variant ? `per ${variant.rateUnit}` : error || "Select configuration"}</small></td>
+              <td className="admin-configuration-subtotal"><strong>{line ? currency.format(line.amount) : "-"}</strong><small>{error || line?.technicalQuantity}</small></td>
+              <td className="admin-configuration-remove"><button type="button" onClick={() => removeRow(row.id)} aria-label="Remove quotation line" title="Remove line"><Trash2 size={14} /></button></td>
+            </tr>;
+          })}</tbody></table></div>
+          <div className="admin-mobile-configuration-cards">{rowCalculations.map((entry, index) => {
+            const { row, variant, line, error } = entry;
+            const { configuration } = row;
+            const materialClasses = quoteOptions(row.productId, "materialClass");
+            const thicknesses = quoteOptions(row.productId, "thickness", { materialClass: configuration.materialClass });
+            const sizes = quoteOptions(row.productId, "size", { materialClass: configuration.materialClass, thickness: configuration.thickness });
+            const laminations = quoteOptions(row.productId, "lamination", configuration);
+            const units = orderUnitOptions(row.productId, variant);
+            const rate = row.rateOverride ?? variant?.rate;
+            const isExpanded = expandedMobileConfigurationLineId === row.id;
+            const productName = quotationProducts.find((product) => product.id === row.productId)?.name || row.productId;
+            const orderUnitLabel = units.find((unit) => unit.value === row.orderUnit)?.label || row.orderUnit;
+            return <article className={`admin-mobile-configuration-card${isExpanded ? " is-expanded" : ""}`} key={row.id}>
+              <div className="admin-mobile-configuration-card-summary">
+                <span className="admin-mobile-configuration-line-number">{index + 1}</span>
+                <div className="admin-mobile-configuration-product-summary"><strong>{productName}</strong><span>{configuration.thickness}<i />{configuration.lamination}<i />{configuration.materialClass}</span><small>{configuration.size}</small></div>
+                <div className="admin-mobile-configuration-subtotal"><strong>{line ? currency.format(line.amount) : "-"}</strong><span>{row.quantity} × {orderUnitLabel}</span><small>{rate !== undefined ? `@ ${currency.format(rate)} per ${variant?.rateUnit || "unit"}` : error || "Rate pending"}</small></div>
+                <button type="button" className="admin-mobile-configuration-remove" onClick={() => removeRow(row.id)} aria-label="Remove quotation line" title="Remove line"><Trash2 size={16} /></button>
+                <button type="button" className="admin-mobile-configuration-toggle" onClick={() => setExpandedMobileConfigurationLineId((current) => current === row.id ? null : row.id)} aria-expanded={isExpanded} aria-label={isExpanded ? "Collapse configuration line" : "Expand configuration line"}>{isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}</button>
+              </div>
+              {isExpanded && <div className="admin-mobile-configuration-fields">
+                <div className="admin-mobile-configuration-field-pair admin-mobile-configuration-field-pair--product"><label>Product<select aria-label={`Product for row ${index + 1}`} value={row.productId} onChange={(event) => changeRowProduct(row.id, event.target.value as QuoteProductId)}>{quotationProducts.map((product) => <option value={product.id} key={product.id}>{product.name}</option>)}</select></label><label>Thickness<select aria-label={`Thickness for row ${index + 1}`} value={configuration.thickness} onChange={(event) => updateRowConfiguration(row.id, "thickness", event.target.value)}>{thicknesses.map((value) => <option key={value} value={value}>{value}</option>)}</select></label></div>
+                <div className="admin-mobile-configuration-field-pair"><label>Lamination<select aria-label={`Lamination for row ${index + 1}`} value={configuration.lamination} onChange={(event) => updateRowConfiguration(row.id, "lamination", event.target.value)}>{laminations.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label>Material class<select aria-label={`Material class for row ${index + 1}`} value={configuration.materialClass} onChange={(event) => updateRowConfiguration(row.id, "materialClass", event.target.value)}>{materialClasses.map((value) => <option key={value} value={value}>{value}</option>)}</select></label></div>
+                <label className="admin-mobile-configuration-field-full">Size / packing<select aria-label={`Size or packing for row ${index + 1}`} title={configuration.size} value={configuration.size} onChange={(event) => updateRowConfiguration(row.id, "size", event.target.value)}>{sizes.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
+                <div className="admin-mobile-configuration-quantity-fields"><label>Order quantity<input aria-label={`Order quantity for row ${index + 1}`} type="number" min="1" step="1" value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} /></label><label>Quantity unit<select aria-label={`Quantity unit for row ${index + 1}`} value={row.orderUnit} onChange={(event) => updateRow(row.id, { orderUnit: event.target.value as QuoteOrderUnit })}>{units.map((unit) => <option value={unit.value} key={unit.value}>{unit.label}</option>)}</select></label><label>Rate / unit<input aria-label={`Rate for row ${index + 1}`} type="number" min="0" step="0.00001" value={rate ?? ""} onChange={(event) => updateRow(row.id, { rateOverride: event.target.value === "" ? undefined : Number(event.target.value) })} /><small>{variant ? `per ${variant.rateUnit}` : error || "Select configuration"}</small></label></div>
+              </div>}
+            </article>;
+          })}</div>
+        </> : <p className="admin-selected-configurations-empty">No product configurations yet. Use <strong>Multiple selection</strong> above to select thicknesses and add your first quotation line.</p>}
       </section>
       <div className="admin-customer-fields-grid admin-manual-commercial-details"><label>GST rate (%)<input type="number" min="0" max="100" step="0.01" value={gstRate} onChange={(event) => setGstRate(Number(event.target.value))} /></label><label>Internal notes<textarea name="internalNotes" placeholder="Optional private commercial note" /></label></div><div className="admin-revision-total"><span>Subtotal <b>{currency.format(subtotal)}</b></span><span>GST <b>{currency.format(gstAmount)}</b></span><strong>Quotation total <b>{currency.format(subtotal + gstAmount)}</b></strong></div>{error && <p className="admin-form-error">{error}</p>}{message && <p className="admin-records-message">{message}</p>}<div className="admin-customer-form-actions"><button type="button" className="admin-drawer-secondary" onClick={() => router.push("/admin/quotations")}>Cancel</button><button className="admin-os-primary" disabled={busy || customerLoading || registeredCustomersLoading || (customerMode === "registered" && !registeredCustomerSelected)}>{busy ? "Creating..." : "Generate quotation"}<ArrowRight size={16} /></button></div>
     </form>
