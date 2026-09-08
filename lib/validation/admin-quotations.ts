@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { builtUpNbrSelectionSchema, quotationCustomerSchema } from "@/lib/validation/quotation";
+import { builtUpNbrSelectionSchema, quotationCustomerSchema, quotationItemSchema } from "@/lib/validation/quotation";
 
 const statuses = ["draft", "generated", "sent", "viewed", "follow_up", "revision_requested", "revised", "accepted", "po_received", "won", "lost", "expired", "cancelled"] as const;
 
@@ -28,6 +28,16 @@ const revisionItemSchema = z.object({
   rateUnit: z.string().trim().min(1).max(80),
 });
 
+/**
+ * A new Admin quotation submits only the product selection and requested
+ * quantity. The server resolves all normal commercial values from the active
+ * Rate Card. `rateOverride` is deliberately explicit so an Admin-entered
+ * exception cannot be confused with an old browser-side catalogue price.
+ */
+const adminStandardQuotationItemSchema = quotationItemSchema.extend({
+  rateOverride: z.coerce.number().finite().nonnegative().max(100000000).optional(),
+});
+
 const adminBuiltUpNbrSelectionSchema = builtUpNbrSelectionSchema.extend({
   overrideAmount: z.coerce.number().finite().nonnegative().optional(),
   overrideReason: z.string().trim().min(3, "Enter an override reason.").max(1000).optional(),
@@ -51,7 +61,7 @@ export const adminQuotationCreateSchema = z.object({
   /** A Customer Record selected from Customer Record & Analysis. */
   customerId: z.string().uuid().optional(),
   customer: quotationCustomerSchema,
-  items: z.array(revisionItemSchema).max(100).default([]),
+  items: z.array(adminStandardQuotationItemSchema).max(100).default([]),
   customBuiltUpItems: z.array(adminBuiltUpNbrSelectionSchema).max(25).default([]),
   gstRate: z.coerce.number().finite().min(0).max(100),
   enquiryId: z.string().uuid().optional(),

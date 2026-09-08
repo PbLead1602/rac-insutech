@@ -4,6 +4,7 @@ import { createAdminQuotation, listAdminQuotations } from "@/lib/repositories/qu
 import { adminQuotationCreateSchema } from "@/lib/validation/admin-quotations";
 import { createQuotationEnquiry, finaliseQuotationSalesLinks, resolveSalesLinks } from "@/lib/repositories/sales-workflow";
 import { priceCustomBuiltUpNbrItem } from "@/lib/quotations/built-up-nbr-pricing";
+import { priceAdminStandardQuotationLine } from "@/lib/quotations/pricing";
 import { getAdminCustomer } from "@/lib/repositories/customers";
 import type { CustomerType, QuotationCustomer } from "@/lib/db/types";
 
@@ -54,8 +55,11 @@ export async function POST(request: Request) {
       notes: selectedCustomerDetail.customer.notes || parsed.data.customer.notes,
     } : parsed.data.customer;
     const salesLinks = await resolveSalesLinks(customer, { customerId: selectedCustomerDetail?.customer.id });
+    // The browser supplies selections only. Standard lines are always rebuilt
+    // from the current active Rate Card immediately before saving.
+    const standardItems = await Promise.all(parsed.data.items.map((item) => priceAdminStandardQuotationLine(item)));
     const customItems = await Promise.all(parsed.data.customBuiltUpItems.map(({ overrideAmount, overrideReason, ...selection }) => priceCustomBuiltUpNbrItem(selection, { overrideAmount, overrideReason })));
-    const items = [...parsed.data.items, ...customItems];
+    const items = [...standardItems, ...customItems];
     const enquiry = parsed.data.enquiryId
       ? undefined
       : await createQuotationEnquiry(customer, salesLinks, {

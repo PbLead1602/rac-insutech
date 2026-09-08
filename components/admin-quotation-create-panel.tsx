@@ -1,12 +1,12 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, ChevronDown, ChevronUp, Plus, Trash2 } from "lucide-react";
 import { adminFetch } from "@/lib/auth/admin-client";
 import { BuiltUpNbrConfigurator, type CustomBuiltUpNbrDraft } from "@/components/built-up-nbr-configurator";
 import type { CustomerRecord, EnquiryRecord, QuotationRecord } from "@/lib/db/types";
-import { calculateQuoteLine, findQuoteVariant, getQuotationVariant, quotationProducts, quotationVariants, quoteOptions, type CalculatedQuoteLine, type QuoteOrderUnit, type QuoteProductId, type QuoteVariant } from "@/lib/quotations/catalogue";
+import { calculateQuoteLine, findQuoteVariant, getQuotationVariant, quotationProducts, quoteOptions, type CalculatedQuoteLine, type QuoteOrderUnit, type QuoteProductId, type QuoteVariant } from "@/lib/quotations/catalogue";
 import { calculateBuiltUpCylinderInsulation, thicknessMmFromRateCardLabel } from "@/lib/quotations/built-up-nbr";
 
 type BatchSelection = { productId: QuoteProductId; materialClass: string; thicknesses: string[]; sizes: string[]; lamination: string };
@@ -15,6 +15,8 @@ type ConfigurationRow = { id: string; productId: QuoteProductId; configuration: 
 type RowCalculation = { row: ConfigurationRow; variant?: QuoteVariant; line?: CalculatedQuoteLine; error?: string };
 type AdminCustomBuiltUpDraft = CustomBuiltUpNbrDraft & { overrideAmount?: number; overrideReason?: string };
 type CustomerRecipientMode = "registered" | "new";
+type ApprovedRate = Pick<QuoteVariant, "rate" | "rateUnit">;
+type RateLookupResult = { variantId: string; available: boolean; rate?: number; rateUnit?: string; message?: string };
 
 const currency = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -121,6 +123,9 @@ export default function AdminQuotationCreatePanel() {
   const [nitrileMode, setNitrileMode] = useState<"standard" | "custom">("standard");
   const [customBuiltUpItems, setCustomBuiltUpItems] = useState<AdminCustomBuiltUpDraft[]>([]);
   const [editingBuiltUpItem, setEditingBuiltUpItem] = useState<CustomBuiltUpNbrDraft | null>(null);
+  const [customPreviewVariantIds, setCustomPreviewVariantIds] = useState<string[]>([]);
+  const [approvedRates, setApprovedRates] = useState<Record<string, ApprovedRate>>({});
+  const [rateErrors, setRateErrors] = useState<Record<string, string>>({});
   const builtUpBasketRef = useRef<HTMLElement | null>(null);
   const shouldScrollToBuiltUpBasket = useRef(false);
   const [builtUpNbrWastagePercent, setBuiltUpNbrWastagePercent] = useState(5);
@@ -220,17 +225,87 @@ export default function AdminQuotationCreatePanel() {
       return sizes.flatMap((size) => quoteOptions(batchSelection.productId, "lamination", { materialClass: batchSelection.materialClass, thickness, size }));
     }))];
   }, [batchSelection.materialClass, batchSelection.productId, batchSelection.sizes, batchSelection.thicknesses, batchThicknesses]);
-  const builtUpPreviewRates = useMemo(() => Object.fromEntries(quotationVariants.filter((variant) => variant.productId === "nitrile-rubber-sheet").map((variant) => [variant.id, { rate: variant.rate, rateUnit: variant.rateUnit }])), []);
+  const loadApprovedRates = useCallback(async (variantIds: string[]) => {
+    const ids = [...new Set(variantIds)];
+    if (!ids.length) return;
+    try {
+      const response = await adminFetch("/api/admin/rates/audit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ variantIds: ids }),
+      });
+      const result = await response.json() as { ok?: boolean; message?: string; rates?: RateLookupResult[] };
+      if (!response.ok || !result.ok || !result.rates) throw new Error(result.message || "Could not load the active Rate Card values.");
+      const nextRates: Record<string, ApprovedRate> = {};
+      const nextErrors: Record<string, string> = {};
+      result.rates.forEach((rate) => {
+        if (rate.available && rate.rate !== undefined && rate.rateUnit) {
+          nextRates[rate.variantId] = { rate: rate.rate, rateUnit: rate.rateUnit as QuoteVariant["rateUnit"] };
+        } else {
+          nextErrors[rate.variantId] = rate.message || "No approved active Rate Card is available.";
+        }
+      });
+      setApprovedRates((current) => {
+        const next = { ...current };
+        ids.forEach((id) => delete next[id]);
+        return { ...next, ...nextRates };
+      });
+      setRateErrors((current) => {
+        const next = { ...current };
+        ids.forEach((id) => delete next[id]);
+        return { ...next, ...nextErrors };
+      });
+    } catch (issue) {
+      const detail = issue instanceof Error ? issue.message : "Could not load the active Rate Card values.";
+      setRateErrors((current) => ({ ...current, ...Object.fromEntries(ids.map((id) => [id, detail])) }));
+    }
+  }, []);
+
+  const configuredVariantIds = useMemo(() => [
+    ...configurationRows.flatMap((row) => {
+      const variant = findQuoteVariant({ productId: row.productId, ...row.configuration });
+      return variant ? [variant.id] : [];
+    }),
+    ...customBuiltUpItems.flatMap((item) => item.layers.map((layer) => layer.variantId).filter(Boolean)),
+    ...customPreviewVariantIds,
+  ], [configurationRows, customBuiltUpItems, customPreviewVariantIds]);
+  const configuredVariantKey = configuredVariantIds.join("|");
+
+  useEffect(() => {
+    if (!configuredVariantIds.length) return;
+    const timer = window.setTimeout(() => { void loadApprovedRates(configuredVariantIds); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [configuredVariantKey, configuredVariantIds, loadApprovedRates]);
+
+  useEffect(() => {
+    const refreshOnFocus = () => { if (configuredVariantIds.length) void loadApprovedRates(configuredVariantIds); };
+    window.addEventListener("focus", refreshOnFocus);
+    return () => window.removeEventListener("focus", refreshOnFocus);
+  }, [configuredVariantKey, configuredVariantIds, loadApprovedRates]);
+
+  const builtUpPreviewRates = approvedRates;
   const customBuiltUpEntries = useMemo(() => customBuiltUpItems.map((item) => {
     try {
-      const calculation = calculateBuiltUpCylinderInsulation({ materialClass: item.materialClass, baseDiameterMm: Number(item.baseDiameterMm), pipeLengthM: Number(item.pipeLengthM), requiredTotalThicknessMm: Number(item.requiredTotalThicknessMm), wastagePercent: builtUpNbrWastagePercent, layers: item.layers.map((layer) => { const variant = getQuotationVariant(layer.variantId); if (!variant) throw new Error("Invalid NBR Sheet layer"); return { variantId: variant.id, thicknessMm: thicknessMmFromRateCardLabel(variant.thickness), lamination: variant.lamination, rate: variant.rate }; }) });
-      return { item, calculation };
+      const layers = item.layers.map((layer) => {
+        const variant = getQuotationVariant(layer.variantId);
+        if (!variant || variant.productId !== "nitrile-rubber-sheet") throw new Error("Invalid NBR Sheet layer");
+        const activeRate = approvedRates[layer.variantId];
+        return { variantId: variant.id, thicknessMm: thicknessMmFromRateCardLabel(variant.thickness), lamination: variant.lamination, ...(activeRate ? { rate: activeRate.rate } : {}) };
+      });
+      const calculation = calculateBuiltUpCylinderInsulation({ materialClass: item.materialClass, baseDiameterMm: Number(item.baseDiameterMm), pipeLengthM: Number(item.pipeLengthM), requiredTotalThicknessMm: Number(item.requiredTotalThicknessMm), wastagePercent: builtUpNbrWastagePercent, layers });
+      const unavailable = item.layers.map((layer) => rateErrors[layer.variantId]).find(Boolean);
+      const allRatesActive = item.layers.every((layer) => approvedRates[layer.variantId]);
+      return { item, calculation, error: unavailable || (allRatesActive ? undefined : "Checking the active NBR Sheet Rate Card...") };
     } catch (error) { return { item, error: error instanceof Error ? error.message : "Could not calculate this Custom Built-Up NBR item." }; }
-  }), [builtUpNbrWastagePercent, customBuiltUpItems]);
-  const customBuiltUpSubtotal = customBuiltUpEntries.reduce((total, entry) => total + (entry.item.overrideAmount !== undefined ? entry.item.overrideAmount : (entry.calculation?.basicAmount || 0)), 0);
+  }), [approvedRates, builtUpNbrWastagePercent, customBuiltUpItems, rateErrors]);
+  const customBuiltUpSubtotal = customBuiltUpEntries.reduce((total, entry) => total + (!entry.error ? entry.item.overrideAmount !== undefined ? entry.item.overrideAmount : (entry.calculation?.basicAmount || 0) : 0), 0);
   const rowCalculations = useMemo<RowCalculation[]>(() => configurationRows.map((row) => {
-    const variant = findQuoteVariant({ productId: row.productId, ...row.configuration });
-    if (!variant) return { row, error: "Choose a valid approved Rate Card configuration." };
+    const catalogueVariant = findQuoteVariant({ productId: row.productId, ...row.configuration });
+    if (!catalogueVariant) return { row, error: "Choose a valid approved Rate Card configuration." };
+    const approvedRate = approvedRates[catalogueVariant.id];
+    if (!approvedRate) return { row, variant: catalogueVariant, error: rateErrors[catalogueVariant.id] || "Checking the active Rate Card..." };
+    const variant = { ...catalogueVariant, ...approvedRate };
     try {
       const calculated = calculateQuoteLine(variant, Number(row.quantity), row.orderUnit);
       const rate = row.rateOverride ?? calculated.rate;
@@ -238,7 +313,7 @@ export default function AdminQuotationCreatePanel() {
     } catch (calculationError) {
       return { row, variant, error: calculationError instanceof Error ? calculationError.message : "Check this configuration." };
     }
-  }), [configurationRows]);
+  }), [approvedRates, configurationRows, rateErrors]);
   const configuredLines = rowCalculations.flatMap((entry) => entry.line ? [entry.line] : []);
   const subtotal = configuredLines.reduce((total, line) => total + line.amount, 0) + customBuiltUpSubtotal;
   const gstAmount = Number((subtotal * (gstRate / 100)).toFixed(2));
@@ -345,10 +420,27 @@ export default function AdminQuotationCreatePanel() {
     event.preventDefault();
     if (customerLoading || (customerMode === "registered" && !registeredCustomerSelected)) { setError("Select an active customer record before creating the quotation."); return; }
     const invalidRow = rowCalculations.find((entry) => entry.error);
-    if (invalidRow || (!configuredLines.length && !customBuiltUpItems.length)) { setError(invalidRow?.error || "Use Multiple selection or Custom Built-Up NBR to add at least one product configuration."); return; }
+    const invalidCustomBuiltUp = customBuiltUpEntries.find((entry) => entry.error);
+    if (invalidRow || invalidCustomBuiltUp || (!configuredLines.length && !customBuiltUpItems.length)) { setError(invalidRow?.error || invalidCustomBuiltUp?.error || "Use Multiple selection or Custom Built-Up NBR to add at least one product configuration."); return; }
     const form = new FormData(event.currentTarget);
     const customer = Object.fromEntries(["fullName", "company", "mobile", "email", "gstin", "projectName", "projectLocation", "city", "pinCode", "customerType", "deliveryPreference", "notes"].map((field) => [field, String(form.get(field) || "")]));
-    const payload = { customerId: customerMode === "registered" && registeredCustomerSelected ? selectedCustomer?.id : undefined, customer, items: configuredLines.map(({ amount: _amount, provisional: _provisional, ...line }) => line), customBuiltUpItems: customBuiltUpItems.map(({ id: _id, ...item }) => item), gstRate, enquiryId: enquiryId || undefined, validUntil: String(form.get("validUntil") || ""), internalNotes: String(form.get("internalNotes") || "") };
+    const payload = {
+      customerId: customerMode === "registered" && registeredCustomerSelected ? selectedCustomer?.id : undefined,
+      customer,
+      // The API receives only the selection and an explicit Admin override.
+      // It recalculates normal lines from the active Rate Card before save.
+      items: rowCalculations.flatMap(({ row, line }) => line ? [{
+        variantId: line.variantId,
+        quantity: Number(row.quantity),
+        orderUnit: row.orderUnit,
+        ...(row.rateOverride !== undefined ? { rateOverride: row.rateOverride } : {}),
+      }] : []),
+      customBuiltUpItems: customBuiltUpItems.map(({ id: _id, ...item }) => item),
+      gstRate,
+      enquiryId: enquiryId || undefined,
+      validUntil: String(form.get("validUntil") || ""),
+      internalNotes: String(form.get("internalNotes") || ""),
+    };
     setBusy(true); setError("");
     try {
       const response = await adminFetch("/api/admin/quotations", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) });
@@ -385,7 +477,7 @@ export default function AdminQuotationCreatePanel() {
         <label>Valid until<input name="validUntil" type="date" /></label>
       </div>
       {isClassONitrileTube(batchSelection.productId) && <fieldset className="nitrile-insulation-type admin-nitrile-insulation-type" aria-label="Nitrile Rubber insulation type"><legend>Insulation type</legend><label><input type="radio" name="admin-nitrile-mode" checked={nitrileMode === "standard"} onChange={() => setNitrileMode("standard")} /> Standard Tube</label><label><input type="radio" name="admin-nitrile-mode" checked={nitrileMode === "custom"} onChange={() => setNitrileMode("custom")} /> Custom Diameter / Built-Up</label><p>Custom Diameter / Built-Up uses active Nitrile Rubber Sheet Rate Cards layer by layer; it never creates a fabricated tube SKU.</p></fieldset>}
-      {isClassONitrileTube(batchSelection.productId) && nitrileMode === "custom" && <BuiltUpNbrConfigurator rates={builtUpPreviewRates} rateErrors={{}} wastagePercent={builtUpNbrWastagePercent} editingItem={editingBuiltUpItem} onEditConsumed={() => setEditingBuiltUpItem(null)} onAdd={(item) => { shouldScrollToBuiltUpBasket.current = true; setCustomBuiltUpItems((current) => current.some((entry) => entry.id === item.id) ? current.map((entry) => entry.id === item.id ? { ...entry, ...item } : entry) : [...current, item]); }} />}
+      {isClassONitrileTube(batchSelection.productId) && nitrileMode === "custom" && <BuiltUpNbrConfigurator rates={builtUpPreviewRates} rateErrors={rateErrors} wastagePercent={builtUpNbrWastagePercent} editingItem={editingBuiltUpItem} onEditConsumed={() => setEditingBuiltUpItem(null)} onPreviewVariantIdsChange={setCustomPreviewVariantIds} onAdd={(item) => { shouldScrollToBuiltUpBasket.current = true; setCustomBuiltUpItems((current) => current.some((entry) => entry.id === item.id) ? current.map((entry) => entry.id === item.id ? { ...entry, ...item } : entry) : [...current, item]); }} />}
       <section className="admin-multiple-selection" hidden={isClassONitrileTube(batchSelection.productId) && nitrileMode === "custom"} aria-labelledby="admin-multiple-selection-title">
         <div className="admin-multiple-selection-heading"><div><p>MULTIPLE SELECTION</p><h3 id="admin-multiple-selection-title">Add several configurations at once</h3></div><span>Each selected option becomes its own editable quotation line with the correct rate and subtotal.</span></div>
         <div className="admin-multiple-selection-grid">
@@ -410,7 +502,7 @@ export default function AdminQuotationCreatePanel() {
             const sizes = quoteOptions(row.productId, "size", { materialClass: configuration.materialClass, thickness: configuration.thickness });
             const laminations = quoteOptions(row.productId, "lamination", configuration);
             const units = orderUnitOptions(row.productId, variant);
-            const rate = row.rateOverride ?? variant?.rate;
+            const rate = row.rateOverride ?? line?.rate;
             return <tr key={row.id}>
               <td className="admin-configuration-row-number"><span aria-label={`Line ${index + 1}`}>{index + 1}</span></td>
               <td className="admin-configuration-product"><select aria-label={`Product for row ${index + 1}`} value={row.productId} onChange={(event) => changeRowProduct(row.id, event.target.value as QuoteProductId)}>{quotationProducts.map((product) => <option value={product.id} key={product.id}>{product.name}</option>)}</select></td>
@@ -420,7 +512,7 @@ export default function AdminQuotationCreatePanel() {
               <td><select aria-label={`Size or packing for row ${index + 1}`} value={configuration.size} onChange={(event) => updateRowConfiguration(row.id, "size", event.target.value)}>{sizes.map((value) => <option key={value} value={value}>{value}</option>)}</select></td>
               <td><input aria-label={`Order quantity for row ${index + 1}`} type="number" min="1" step="1" value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} /></td>
               <td><select aria-label={`Quantity unit for row ${index + 1}`} value={row.orderUnit} onChange={(event) => updateRow(row.id, { orderUnit: event.target.value as QuoteOrderUnit })}>{units.map((unit) => <option value={unit.value} key={unit.value}>{unit.label}</option>)}</select></td>
-              <td className="admin-configuration-rate"><input aria-label={`Rate for row ${index + 1}`} type="number" min="0" step="0.00001" value={rate ?? ""} onChange={(event) => updateRow(row.id, { rateOverride: event.target.value === "" ? undefined : Number(event.target.value) })} /><small>{variant ? `per ${variant.rateUnit}` : error || "Select configuration"}</small></td>
+              <td className="admin-configuration-rate"><input aria-label={`Rate for row ${index + 1}`} type="number" min="0" step="0.00001" value={rate ?? ""} onChange={(event) => updateRow(row.id, { rateOverride: event.target.value === "" ? undefined : Number(event.target.value) })} /><small>{line ? `per ${line.rateUnit}` : error || "Select configuration"}</small></td>
               <td className="admin-configuration-subtotal"><strong>{line ? currency.format(line.amount) : "-"}</strong><small>{error || line?.technicalQuantity}</small></td>
               <td className="admin-configuration-remove"><button type="button" onClick={() => removeRow(row.id)} aria-label="Remove quotation line" title="Remove line"><Trash2 size={14} /></button></td>
             </tr>;
@@ -433,7 +525,7 @@ export default function AdminQuotationCreatePanel() {
             const sizes = quoteOptions(row.productId, "size", { materialClass: configuration.materialClass, thickness: configuration.thickness });
             const laminations = quoteOptions(row.productId, "lamination", configuration);
             const units = orderUnitOptions(row.productId, variant);
-            const rate = row.rateOverride ?? variant?.rate;
+            const rate = row.rateOverride ?? line?.rate;
             const isExpanded = expandedMobileConfigurationLineId === row.id;
             const productName = quotationProducts.find((product) => product.id === row.productId)?.name || row.productId;
             const orderUnitLabel = units.find((unit) => unit.value === row.orderUnit)?.label || row.orderUnit;
@@ -449,7 +541,7 @@ export default function AdminQuotationCreatePanel() {
                 <div className="admin-mobile-configuration-field-pair admin-mobile-configuration-field-pair--product"><label>Product<select aria-label={`Product for row ${index + 1}`} value={row.productId} onChange={(event) => changeRowProduct(row.id, event.target.value as QuoteProductId)}>{quotationProducts.map((product) => <option value={product.id} key={product.id}>{product.name}</option>)}</select></label><label>Thickness<select aria-label={`Thickness for row ${index + 1}`} value={configuration.thickness} onChange={(event) => updateRowConfiguration(row.id, "thickness", event.target.value)}>{thicknesses.map((value) => <option key={value} value={value}>{value}</option>)}</select></label></div>
                 <div className="admin-mobile-configuration-field-pair"><label>Lamination<select aria-label={`Lamination for row ${index + 1}`} value={configuration.lamination} onChange={(event) => updateRowConfiguration(row.id, "lamination", event.target.value)}>{laminations.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label>Material class<select aria-label={`Material class for row ${index + 1}`} value={configuration.materialClass} onChange={(event) => updateRowConfiguration(row.id, "materialClass", event.target.value)}>{materialClasses.map((value) => <option key={value} value={value}>{value}</option>)}</select></label></div>
                 <label className="admin-mobile-configuration-field-full">Size / packing<select aria-label={`Size or packing for row ${index + 1}`} title={configuration.size} value={configuration.size} onChange={(event) => updateRowConfiguration(row.id, "size", event.target.value)}>{sizes.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-                <div className="admin-mobile-configuration-quantity-fields"><label>Order quantity<input aria-label={`Order quantity for row ${index + 1}`} type="number" min="1" step="1" value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} /></label><label>Quantity unit<select aria-label={`Quantity unit for row ${index + 1}`} value={row.orderUnit} onChange={(event) => updateRow(row.id, { orderUnit: event.target.value as QuoteOrderUnit })}>{units.map((unit) => <option value={unit.value} key={unit.value}>{unit.label}</option>)}</select></label><label>Rate / unit<input aria-label={`Rate for row ${index + 1}`} type="number" min="0" step="0.00001" value={rate ?? ""} onChange={(event) => updateRow(row.id, { rateOverride: event.target.value === "" ? undefined : Number(event.target.value) })} /><small>{variant ? `per ${variant.rateUnit}` : error || "Select configuration"}</small></label></div>
+                <div className="admin-mobile-configuration-quantity-fields"><label>Order quantity<input aria-label={`Order quantity for row ${index + 1}`} type="number" min="1" step="1" value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} /></label><label>Quantity unit<select aria-label={`Quantity unit for row ${index + 1}`} value={row.orderUnit} onChange={(event) => updateRow(row.id, { orderUnit: event.target.value as QuoteOrderUnit })}>{units.map((unit) => <option value={unit.value} key={unit.value}>{unit.label}</option>)}</select></label><label>Rate / unit<input aria-label={`Rate for row ${index + 1}`} type="number" min="0" step="0.00001" value={rate ?? ""} onChange={(event) => updateRow(row.id, { rateOverride: event.target.value === "" ? undefined : Number(event.target.value) })} /><small>{line ? `per ${line.rateUnit}` : error || "Select configuration"}</small></label></div>
               </div>}
             </article>;
           })}</div>

@@ -2,7 +2,7 @@ import "server-only";
 
 import { integrationMode } from "@/lib/env";
 import { serverEnv } from "@/lib/env/server";
-import { getQuotationVariant, type QuoteVariant } from "@/lib/quotations/catalogue";
+import { calculateQuoteLine, getQuotationVariant, type CalculatedQuoteLine, type QuoteOrderUnit, type QuoteVariant } from "@/lib/quotations/catalogue";
 import { getActiveRateCardForVariant } from "@/lib/repositories/rates";
 
 /**
@@ -24,5 +24,30 @@ export async function getServerPricedVariant(variantId: string): Promise<QuoteVa
     rateUnit: card.rateUnit as QuoteVariant["rateUnit"],
     rollAreaM2: card.rollAreaM2,
     packRunningMetres: card.packRunningMetres,
+  };
+}
+
+/**
+ * Prices a standard manual Admin quotation line from its active Rate Card.
+ * The client never submits a catalogue price or calculated supply values. An
+ * Admin may still make an intentional one-off override, but it is represented
+ * separately and is recalculated against the governed supplied quantity.
+ */
+export async function priceAdminStandardQuotationLine(input: {
+  variantId: string;
+  quantity: number;
+  orderUnit: QuoteOrderUnit;
+  rateOverride?: number;
+}): Promise<CalculatedQuoteLine> {
+  const variant = await getServerPricedVariant(input.variantId);
+  if (!variant) throw new Error("One selected product configuration is no longer available. Please configure it again.");
+
+  const calculated = calculateQuoteLine(variant, input.quantity, input.orderUnit);
+  if (input.rateOverride === undefined) return calculated;
+
+  return {
+    ...calculated,
+    rate: input.rateOverride,
+    amount: Number((calculated.suppliedQuantity * input.rateOverride).toFixed(2)),
   };
 }
