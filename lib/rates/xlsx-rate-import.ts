@@ -4,6 +4,7 @@ import { createHash } from "crypto";
 import { inflateRawSync } from "zlib";
 import { quotationVariants, type QuoteVariant } from "@/lib/quotations/catalogue";
 import type { QuotationRateCardRecord } from "@/lib/db/types";
+import { canonicalRateConfigurationKey, parseImportedRate, reconcileRateConfiguration } from "@/lib/rates/canonical-rate-key";
 
 export const rateImportProfiles = [
   { id: "auto", name: "Auto-detect from workbook" },
@@ -65,7 +66,15 @@ type WorkbookSheet = { name: string; rows: string[][] };
 type SourceCandidate = { sourceRow: number; sheetName: string; source: Record<string, string>; variant?: QuoteVariant; rate?: number; confidence: RateImportConfidence; issues: string[] };
 
 const textDecoder = new TextDecoder();
-const profileLabel = (id: Exclude<RateImportProfileId, "auto">) => rateImportProfiles.find((profile) => profile.id === id)?.name || id;
+const canonicalProfileLabels: Record<Exclude<RateImportProfileId, "auto">, string> = {
+  "xlpe-tubes": "XLPE Tubes — supplier master rate list",
+  "nitrile-tube-class-1": "Nitrile Rubber Tube — Class 1",
+  "nitrile-tube-class-o": "Nitrile Rubber Tube — Class O",
+  "sheet-insulation": "XLPE & Nitrile Rubber Sheet rate list",
+  "insulation-tape": "Insulation Tape rate list",
+  "insulation-adhesive": "Insulation Adhesive rate list",
+};
+const profileLabel = (id: Exclude<RateImportProfileId, "auto">) => canonicalProfileLabels[id];
 
 function cellColumn(reference = "A1") {
   const letters = reference.match(/[A-Z]+/i)?.[0]?.toUpperCase() || "A";
@@ -132,8 +141,7 @@ function readWorkbook(bytes: Uint8Array): WorkbookSheet[] {
 }
 
 function numberValue(value: string | undefined) {
-  const normalized = String(value || "").replace(/[₹,\s]/g, "").replace(/^INR/i, "");
-  return /^-?\d+(?:\.\d+)?$/.test(normalized) ? Number(normalized) : undefined;
+  return parseImportedRate(value);
 }
 
 function sourceRecord(row: string[]) {
@@ -273,22 +281,58 @@ function candidatesFor(profile: Exclude<RateImportProfileId, "auto">, sheet: Wor
   return [];
 }
 
-function configurationKey(value: Pick<ImportedRateConfiguration, "productSlug" | "materialClass" | "thickness" | "sizeLabel" | "lamination">) {
+function displayConfigurationKey(value: Pick<ImportedRateConfiguration, "productSlug" | "materialClass" | "thickness" | "sizeLabel" | "lamination">) {
   return [value.productSlug, value.materialClass, value.thickness, value.sizeLabel, value.lamination].map((item) => item.trim().toLowerCase()).join("|");
 }
 
+export type RateImportReconciliation = {
+  action: Extract<RateImportAction, "create" | "update" | "unchanged" | "duplicate">;
+  matches: QuotationRateCardRecord[];
+  existingRateCard?: QuotationRateCardRecord;
+  reactivate?: boolean;
+  reason?: string;
+};
+
+/**
+ * Reconciles a supplier mapping to governed Rate Cards using a stable
+ * configuration identity. Price deliberately remains outside that identity.
+ */
+export function reconcileImportedRateConfiguration(mapping: ImportedRateConfiguration, existing: QuotationRateCardRecord[]): RateImportReconciliation {
+  const reconciliation = reconcileRateConfiguration(mapping, existing);
+  if (reconciliation.action === "create") return { ...reconciliation, reason: "No existing Rate Card matches this canonical configuration." };
+  if (reconciliation.action === "duplicate") return { ...reconciliation, reason: "Multiple existing Rate Cards match this canonical configuration. Resolve the duplicate before importing." };
+  const existingRateCard = reconciliation.existingRateCard!;
+  const rawMatches = displayConfigurationKey(mapping) === displayConfigurationKey(existingRateCard);
+  return {
+    ...reconciliation,
+    existingRateCard,
+    ...(rawMatches ? {} : { reason: "Matched an existing legacy Rate Card after canonical normalization." }),
+  };
+}
+
 function analyseCandidates(candidates: SourceCandidate[], existing: QuotationRateCardRecord[]): RateImportRow[] {
-  const known = new Map(existing.map((card) => [configurationKey(card), card])); const seen = new Set<string>();
+  const seen = new Set<string>();
   return candidates.map((candidate, index) => {
     const issues = [...candidate.issues];
     if (!candidate.variant || candidate.rate === undefined || !Number.isFinite(candidate.rate) || candidate.rate <= 0) return { id: `row-${index + 1}`, sourceRow: candidate.sourceRow, sheetName: candidate.sheetName, source: candidate.source, action: "invalid", confidence: candidate.confidence, issues: [...issues, ...(candidate.variant ? [] : ["No RAC configuration matched this row."]), ...(candidate.rate && candidate.rate <= 0 ? ["Rate must be greater than zero."] : [])] };
-    const mapping = variantConfiguration(candidate.variant, candidate.rate); const key = configurationKey(mapping);
-    if (seen.has(key)) return { id: `row-${index + 1}`, sourceRow: candidate.sourceRow, sheetName: candidate.sheetName, source: candidate.source, mapping, action: "duplicate", confidence: candidate.confidence, issues: [...issues, "Duplicate configuration in this import. The first mapped row is retained."], oldRate: known.get(key)?.rate, existingRateCardId: known.get(key)?.id };
-    seen.add(key); const current = known.get(key);
-    if (!current) return { id: `row-${index + 1}`, sourceRow: candidate.sourceRow, sheetName: candidate.sheetName, source: candidate.source, mapping, action: "create", confidence: candidate.confidence, issues };
-    const sameRate = Math.abs(current.rate - candidate.rate) < 0.00001;
-    if (sameRate && current.active) return { id: `row-${index + 1}`, sourceRow: candidate.sourceRow, sheetName: candidate.sheetName, source: candidate.source, mapping, action: "unchanged", confidence: candidate.confidence, issues, oldRate: current.rate, existingRateCardId: current.id };
-    return { id: `row-${index + 1}`, sourceRow: candidate.sourceRow, sheetName: candidate.sheetName, source: candidate.source, mapping, action: "update", confidence: candidate.confidence, issues, oldRate: current.rate, existingRateCardId: current.id, reactivate: !current.active };
+    const mapping = variantConfiguration(candidate.variant, candidate.rate);
+    const key = canonicalRateConfigurationKey(mapping);
+    const reconciliation = reconcileImportedRateConfiguration(mapping, existing);
+    const current = reconciliation.existingRateCard;
+    if (seen.has(key)) return { id: `row-${index + 1}`, sourceRow: candidate.sourceRow, sheetName: candidate.sheetName, source: candidate.source, mapping, action: "duplicate", confidence: candidate.confidence, issues: [...issues, "Duplicate configuration in this import. The first mapped row is retained."], ...(current ? { oldRate: current.rate, existingRateCardId: current.id } : {}) };
+    seen.add(key);
+    return {
+      id: `row-${index + 1}`,
+      sourceRow: candidate.sourceRow,
+      sheetName: candidate.sheetName,
+      source: candidate.source,
+      mapping,
+      action: reconciliation.action,
+      confidence: candidate.confidence,
+      issues: [...issues, ...(reconciliation.reason ? [reconciliation.reason] : [])],
+      ...(current ? { oldRate: current.rate, existingRateCardId: current.id } : {}),
+      ...(reconciliation.reactivate ? { reactivate: true } : {}),
+    };
   });
 }
 

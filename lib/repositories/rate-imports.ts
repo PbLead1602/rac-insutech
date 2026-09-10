@@ -4,7 +4,7 @@ import { randomUUID } from "crypto";
 import { integrationMode } from "@/lib/env";
 import { serverEnv } from "@/lib/env/server";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
-import { analyseXlsxRateList, rateImportProfiles, type ImportedRateConfiguration, type RateImportAction, type RateImportAnalysis, type RateImportConfidence, type RateImportProfileId, type RateImportRow } from "@/lib/rates/xlsx-rate-import";
+import { analyseXlsxRateList, rateImportProfiles, reconcileImportedRateConfiguration, type ImportedRateConfiguration, type RateImportAction, type RateImportAnalysis, type RateImportConfidence, type RateImportProfileId, type RateImportRow } from "@/lib/rates/xlsx-rate-import";
 import { createAdminRateCard, listAdminRateCards, updateAdminRateCard, type RateCardInput } from "@/lib/repositories/rates";
 import { persistentDevelopmentStore } from "@/lib/development/persistent-store";
 
@@ -150,20 +150,27 @@ export async function confirmAdminRateImport(input: { importId: string; selected
   const analysis = await loadReviewedImport(input.importId); if (!analysis) throw new Error("This import review has expired. Upload the workbook again before confirming.");
   const selected = new Set(input.selectedRowIds); const eligible = analysis.rows.filter((row) => selected.has(row.id) && (row.action === "create" || row.action === "update") && row.mapping);
   if (!eligible.length) throw new Error("Select at least one valid new or changed rate before confirming.");
-  const applied = new Map<string, string>(); let created = 0; let updated = 0;
+  const currentCards = await listAdminRateCards();
+  const applied = new Map<string, string>(); let created = 0; let updated = 0; let revalidatedSkipped = 0;
   for (const row of eligible) {
     const reason = `Imported from ${analysis.fileName} on ${new Date().toLocaleDateString("en-GB")}; profile: ${analysis.profileName}.`;
+    const reconciliation = reconcileImportedRateConfiguration(row.mapping!, currentCards);
+    if (reconciliation.action === "duplicate") throw new Error(`Source row ${row.sourceRow} matches multiple current Rate Cards. Resolve the duplicate and re-analyse the workbook.`);
+    if (row.action === "create" && reconciliation.action !== "create") throw new Error(`Source row ${row.sourceRow} now matches an existing Rate Card. Re-analyse the workbook before confirming.`);
+    if (row.action === "update" && reconciliation.action === "create") throw new Error(`The Rate Card for source row ${row.sourceRow} no longer exists. Re-analyse the workbook before confirming.`);
+    if (row.action === "update" && reconciliation.action === "unchanged") { revalidatedSkipped += 1; continue; }
     if (row.action === "create") {
-      const result = await createAdminRateCard({ ...inputFromRow(row.mapping!), reason }); applied.set(row.id, result.card.id); created += 1;
-    } else if (row.existingRateCardId) {
-      const card = await updateAdminRateCard(row.existingRateCardId, { rate: row.mapping!.rate, active: row.reactivate ? true : undefined, reason }, input.adminId);
+      const result = await createAdminRateCard({ ...inputFromRow(row.mapping!), reason }); applied.set(row.id, result.card.id); currentCards.push(result.card); created += 1;
+    } else if (reconciliation.existingRateCard) {
+      const card = await updateAdminRateCard(reconciliation.existingRateCard.id, { rate: row.mapping!.rate, active: reconciliation.reactivate ? true : undefined, reason }, input.adminId);
       if (!card) throw new Error(`The Rate Card for source row ${row.sourceRow} no longer exists. Re-analyse the workbook before confirming.`);
+      const index = currentCards.findIndex((candidate) => candidate.id === card.id); if (index >= 0) currentCards[index] = card;
       applied.set(row.id, card.id); updated += 1;
     }
   }
   await finaliseImport(analysis, selected, applied);
   if (integrationMode(serverEnv.supabaseServiceConfigured) === "mock") developmentStore().analyses = developmentStore().analyses.filter((entry) => entry.id !== input.importId);
-  return { created, updated, skipped: analysis.rows.length - eligible.length, fileName: analysis.fileName };
+  return { created, updated, skipped: analysis.rows.length - eligible.length + revalidatedSkipped, fileName: analysis.fileName };
 }
 
 export function rateImportProfileExists(value: string): value is RateImportProfileId {

@@ -5,6 +5,7 @@ import { integrationMode, type IntegrationMode } from "@/lib/env";
 import { serverEnv } from "@/lib/env/server";
 import type { QuotationRateCardRecord, RateCardHistoryRecord } from "@/lib/db/types";
 import { quotationVariants, type QuoteVariant } from "@/lib/quotations/catalogue";
+import { canonicalRateCardMatches, canonicalRateConfigurationKey } from "@/lib/rates/canonical-rate-key";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { persistentDevelopmentStore } from "@/lib/development/persistent-store";
 
@@ -34,25 +35,20 @@ function toRateCard(row: Record<string, unknown>): QuotationRateCardRecord { ret
 function decorate(card: QuotationRateCardRecord): QuotationRateCardRecord { const source = quotationVariants.find((variant) => variant.productId === card.productSlug); return { ...card, productName: card.productName || source?.productName || card.productSlug }; }
 
 function matchesVariant(card: QuotationRateCardRecord, variant: QuoteVariant) {
-  return card.productSlug === variant.productId
-    && card.materialClass === variant.materialClass
-    && card.thickness === variant.thickness
-    && card.sizeLabel === variant.size
-    && card.lamination === variant.lamination;
+  return canonicalRateConfigurationKey(card) === canonicalRateConfigurationKey({
+    productSlug: variant.productId,
+    materialClass: variant.materialClass,
+    thickness: variant.thickness,
+    sizeLabel: variant.size,
+    lamination: variant.lamination,
+    orderUnit: variant.orderUnit,
+    rateUnit: variant.rateUnit,
+  });
 }
 
 /** Returns the governed, currently valid Rate Card for quotation pricing. */
 export async function getActiveRateCardForVariant(variant: QuoteVariant): Promise<QuotationRateCardRecord | null> {
-  const mode = integrationMode(serverEnv.supabaseServiceConfigured); const today = new Date().toISOString().slice(0, 10);
-  if (mode === "mock") return developmentStore().cards.find((card) => matchesVariant(card, variant) && card.active && (!card.validFrom || card.validFrom <= today) && (!card.validTo || card.validTo >= today)) || null;
-  if (mode === "unconfigured") return null;
-  const client = getSupabaseServiceClient(); if (!client) throw new Error("Supabase service client is unavailable.");
-  const { data, error } = await client.from("quotation_rate_cards").select("*")
-    .eq("product_slug", variant.productId).eq("material_class", variant.materialClass).eq("thickness", variant.thickness).eq("size_label", variant.size).eq("lamination", variant.lamination).eq("active", true).maybeSingle();
-  if (error) throw new Error("Could not look up the approved quotation rate.");
-  if (!data) return null;
-  const card = decorate(toRateCard(data as Record<string, unknown>));
-  return (!card.validFrom || card.validFrom <= today) && (!card.validTo || card.validTo >= today) ? card : null;
+  return (await getActiveRateCardsForVariants([variant])).get(variant.id) || null;
 }
 
 /**
@@ -78,8 +74,10 @@ export async function getActiveRateCardsForVariants(variants: readonly QuoteVari
   const activeCards = cards.filter((card) => card.active && (!card.validFrom || card.validFrom <= today) && (!card.validTo || card.validTo >= today));
   const results = new Map<string, QuotationRateCardRecord>();
   variants.forEach((variant) => {
-    const card = activeCards.find((candidate) => matchesVariant(candidate, variant));
-    if (card) results.set(variant.id, card);
+    const cardsForVariant = activeCards.filter((candidate) => matchesVariant(candidate, variant));
+    // Never price a quotation against an arbitrary duplicate. The controlled
+    // importer flags that situation for Admin resolution instead.
+    if (cardsForVariant.length === 1) results.set(variant.id, cardsForVariant[0]);
   });
   return results;
 }
@@ -88,7 +86,7 @@ export async function listAdminRateCards(query = ""): Promise<QuotationRateCardR
   const mode = integrationMode(serverEnv.supabaseServiceConfigured); const search = query.trim().toLowerCase();
   if (mode === "mock") return developmentStore().cards.filter((card) => !search || [card.productName, card.productSlug, card.materialClass, card.thickness, card.sizeLabel, card.lamination].join(" ").toLowerCase().includes(search));
   if (mode === "unconfigured") throw new Error("Rate-card storage is not configured."); const client = getSupabaseServiceClient(); if (!client) throw new Error("Supabase service client is unavailable.");
-  let request = client.from("quotation_rate_cards").select("*").order("updated_at", { ascending: false }).limit(250); if (query.trim()) request = request.or(`product_slug.ilike.%${query.trim()}%,material_class.ilike.%${query.trim()}%,thickness.ilike.%${query.trim()}%,size_label.ilike.%${query.trim()}%,lamination.ilike.%${query.trim()}%`);
+  let request = client.from("quotation_rate_cards").select("*").order("updated_at", { ascending: false }).limit(5000); if (query.trim()) request = request.or(`product_slug.ilike.%${query.trim()}%,material_class.ilike.%${query.trim()}%,thickness.ilike.%${query.trim()}%,size_label.ilike.%${query.trim()}%,lamination.ilike.%${query.trim()}%`);
   const { data, error } = await request; if (error) throw new Error("Could not load rate cards."); return (data || []).map((row) => decorate(toRateCard(row as Record<string, unknown>)));
 }
 
@@ -103,7 +101,8 @@ export async function getAdminRateCard(id: string): Promise<{ card: QuotationRat
 
 export async function createAdminRateCard(input: RateCardInput): Promise<{ card: QuotationRateCardRecord; mode: IntegrationMode }> {
   const mode = integrationMode(serverEnv.supabaseServiceConfigured); if (mode === "unconfigured") throw new Error("Rate-card storage is not configured.");
-  if (mode === "mock") { if (developmentStore().cards.some((item) => item.productSlug === input.productSlug && item.materialClass === input.materialClass && item.thickness === input.thickness && item.sizeLabel === input.sizeLabel && item.lamination === input.lamination)) throw new RateCardConflictError("A rate card already exists for this exact product configuration."); const card = decorate({ ...input, id: randomUUID(), createdAt: new Date().toISOString(), publishedAt: input.active ? new Date().toISOString() : undefined }); developmentStore().cards.unshift(card); developmentStore().history.unshift({ id: randomUUID(), rateCardId: card.id, newRate: card.rate, validFrom: card.validFrom, validTo: card.validTo, reason: card.reason || "Initial rate card", changedAt: new Date().toISOString() }); return { card, mode }; }
+  if (mode === "mock") { if (canonicalRateCardMatches(input, developmentStore().cards).length) throw new RateCardConflictError("A rate card already exists for this product configuration."); const card = decorate({ ...input, id: randomUUID(), createdAt: new Date().toISOString(), publishedAt: input.active ? new Date().toISOString() : undefined }); developmentStore().cards.unshift(card); developmentStore().history.unshift({ id: randomUUID(), rateCardId: card.id, newRate: card.rate, validFrom: card.validFrom, validTo: card.validTo, reason: card.reason || "Initial rate card", changedAt: new Date().toISOString() }); return { card, mode }; }
+  if (canonicalRateCardMatches(input, await listAdminRateCards()).length) throw new RateCardConflictError("A rate card already exists for this product configuration.");
   const client = getSupabaseServiceClient(); if (!client) throw new Error("Supabase service client is unavailable.");
   const { data, error } = await client.from("quotation_rate_cards").insert({ product_slug: input.productSlug, material_class: input.materialClass, thickness: input.thickness, size_label: input.sizeLabel, lamination: input.lamination, order_unit: input.orderUnit, rate: input.rate, rate_unit: input.rateUnit, roll_area_m2: input.rollAreaM2 || null, pack_running_metres: input.packRunningMetres || null, packing_label: input.packingLabel || null, moq: input.moq || null, gst_rate: input.gstRate, active: input.active, valid_from: input.validFrom || null, valid_to: input.validTo || null, reason: input.reason || null, published_at: input.active ? new Date().toISOString() : null }).select("*").single();
   if (error || !data) { if (error?.code === "23505") throw new RateCardConflictError("A rate card already exists for this exact product configuration."); throw new Error("Could not create the rate card."); }
