@@ -29,6 +29,7 @@ function developmentStore(): DevelopmentStore {
 export type RateCardInput = Omit<QuotationRateCardRecord, "id" | "createdAt" | "publishedAt" | "archivedAt" | "productName">;
 export type RateCardPatch = Partial<Pick<QuotationRateCardRecord, "rate" | "gstRate" | "active" | "validFrom" | "validTo" | "reason" | "packingLabel" | "moq" | "rollAreaM2" | "packRunningMetres" | "archivedAt">>;
 type RateCardUpdateOptions = { expectedPreviousRate?: number };
+type RateCardCreateOptions = { existingCards?: readonly QuotationRateCardRecord[] };
 type RateCardHistoryInput = {
   rateCardId: string;
   oldRate: number | null;
@@ -135,10 +136,10 @@ export async function getAdminRateCard(id: string): Promise<{ card: QuotationRat
   return { card: decorate(toRateCard(data as Record<string, unknown>)), history: (history || []).map((row) => ({ id: row.id, rateCardId: row.rate_card_id, oldRate: row.old_rate === null ? undefined : Number(row.old_rate), newRate: Number(row.new_rate), validFrom: row.valid_from || undefined, validTo: row.valid_to || undefined, reason: row.reason, changedAt: row.changed_at })) };
 }
 
-export async function createAdminRateCard(input: RateCardInput): Promise<{ card: QuotationRateCardRecord; mode: IntegrationMode }> {
+export async function createAdminRateCard(input: RateCardInput, options: RateCardCreateOptions = {}): Promise<{ card: QuotationRateCardRecord; mode: IntegrationMode }> {
   const mode = integrationMode(serverEnv.supabaseServiceConfigured); if (mode === "unconfigured") throw new Error("Rate-card storage is not configured.");
   if (mode === "mock") { if (canonicalRateCardMatches(input, developmentStore().cards).length) throw new RateCardConflictError("A rate card already exists for this product configuration."); const card = decorate({ ...input, id: randomUUID(), createdAt: new Date().toISOString(), publishedAt: input.active ? new Date().toISOString() : undefined }); developmentStore().cards.unshift(card); developmentStore().history.unshift({ id: randomUUID(), rateCardId: card.id, newRate: card.rate, validFrom: card.validFrom, validTo: card.validTo, reason: card.reason || "Initial rate card", changedAt: new Date().toISOString() }); return { card, mode }; }
-  if (canonicalRateCardMatches(input, await listAdminRateCards()).length) throw new RateCardConflictError("A rate card already exists for this product configuration.");
+  if (canonicalRateCardMatches(input, options.existingCards || await listAdminRateCards()).length) throw new RateCardConflictError("A rate card already exists for this product configuration.");
   const client = getSupabaseServiceClient(); if (!client) throw new Error("Supabase service client is unavailable.");
   const { data, error } = await client.from("quotation_rate_cards").insert({ product_slug: input.productSlug, material_class: input.materialClass, thickness: input.thickness, size_label: input.sizeLabel, lamination: input.lamination, order_unit: input.orderUnit, rate: input.rate, rate_unit: input.rateUnit, roll_area_m2: input.rollAreaM2 || null, pack_running_metres: input.packRunningMetres || null, packing_label: input.packingLabel || null, moq: input.moq || null, gst_rate: input.gstRate, active: input.active, valid_from: input.validFrom || null, valid_to: input.validTo || null, reason: input.reason || null, published_at: input.active ? new Date().toISOString() : null }).select("*").single();
   if (error || !data) { if (error?.code === "23505") throw new RateCardConflictError("A rate card already exists for this exact product configuration."); throw new Error("Could not create the rate card."); }
