@@ -263,7 +263,12 @@ function findPrimarySheet(sheets: WorkbookSheet[]) { return sheets.find((sheet) 
 
 function detectProfile(fileName: string, requested: RateImportProfileId, sheets: WorkbookSheet[]): Exclude<RateImportProfileId, "auto"> {
   if (requested !== "auto") return requested;
-  const text = `${fileName} ${sheets.flatMap((sheet) => sheet.rows.slice(0, 4).flat()).join(" ")}`.toLowerCase();
+  const fileNameText = fileName.toLowerCase();
+  // Combined sheet-rate workbooks may include hidden helper tabs. Their
+  // incidental labels must not override the supplier filename and cause the
+  // main XLPE/NBR rate tables to be parsed as adhesive data.
+  if (fileNameText.includes("xlpe") && (fileNameText.includes("nbr") || fileNameText.includes("nitrile")) && !fileNameText.includes("tube")) return "sheet-insulation";
+  const text = `${fileNameText} ${sheets.flatMap((sheet) => sheet.rows.slice(0, 4).flat()).join(" ")}`.toLowerCase();
   if (text.includes("adhesive")) return "insulation-adhesive";
   if (text.includes("tape")) return "insulation-tape";
   if (text.includes("xlpe") && text.includes("tube")) return "xlpe-tubes";
