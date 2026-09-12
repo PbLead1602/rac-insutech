@@ -4,13 +4,34 @@ import { randomUUID } from "crypto";
 import { integrationMode } from "@/lib/env";
 import { serverEnv } from "@/lib/env/server";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
-import { analyseXlsxRateList, rateImportProfiles, reconcileImportedRateConfiguration, type ImportedRateConfiguration, type RateImportAction, type RateImportAnalysis, type RateImportConfidence, type RateImportProfileId, type RateImportRow } from "@/lib/rates/xlsx-rate-import";
+import type { QuotationRateCardRecord } from "@/lib/db/types";
+import { analyseXlsxRateList, rateImportProfiles, type ImportedRateConfiguration, type RateImportAction, type RateImportAnalysis, type RateImportConfidence, type RateImportProfileId, type RateImportRow } from "@/lib/rates/xlsx-rate-import";
+import { canonicalRateConfigurationKey, reconcileRateConfiguration } from "@/lib/rates/canonical-rate-key";
 import { createAdminRateCard, listAdminRateCards, updateAdminRateCard, type RateCardInput } from "@/lib/repositories/rates";
 import { persistentDevelopmentStore } from "@/lib/development/persistent-store";
 
 type DevelopmentImportStore = { analyses: RateImportAnalysis[] };
 type ReviewMetadata = { existingRateCardId?: string; reactivate?: boolean; sheetName: string };
 type PreparedRateUpdate = { rateCardId: string; expectedPreviousRate: number; newRate: number; reactivate: boolean; reason: string; adminId?: string };
+
+const IMPORT_FALLBACK_CONCURRENCY = 20;
+
+async function inConcurrentBatches<T>(values: readonly T[], work: (value: T) => Promise<void>, batchSize = IMPORT_FALLBACK_CONCURRENCY) {
+  for (let start = 0; start < values.length; start += batchSize) {
+    await Promise.all(values.slice(start, start + batchSize).map(work));
+  }
+}
+
+function indexRateCards(cards: readonly QuotationRateCardRecord[]) {
+  const index = new Map<string, QuotationRateCardRecord[]>();
+  cards.forEach((card) => {
+    const key = canonicalRateConfigurationKey(card);
+    const matches = index.get(key);
+    if (matches) matches.push(card);
+    else index.set(key, [card]);
+  });
+  return index;
+}
 
 function developmentStore() {
   return persistentDevelopmentStore<DevelopmentImportStore>("rate-import-reviews", () => ({ analyses: [] }));
@@ -145,7 +166,7 @@ async function applyPreparedRateUpdates(updates: PreparedRateUpdate[]) {
   const mode = integrationMode(serverEnv.supabaseServiceConfigured);
   if (mode === "live") {
     const client = getSupabaseServiceClient(); if (!client) throw new Error("Supabase service client is unavailable.");
-    const { error } = await client.rpc("apply_rate_import_updates", {
+    const { error } = await client.rpc("apply_rate_import_updates_v2", {
       p_changes: updates.map((update) => ({
         rate_card_id: update.rateCardId,
         expected_previous_rate: update.expectedPreviousRate,
@@ -156,15 +177,16 @@ async function applyPreparedRateUpdates(updates: PreparedRateUpdate[]) {
       })),
     });
     if (!error) return;
-    if (!isMissingRpcFunction(error, "apply_rate_import_updates")) throw new Error("Could not apply the selected Rate Card changes. No selected rate changes were saved.");
+    if (!isMissingRpcFunction(error, "apply_rate_import_updates_v2")) throw new Error("Could not apply the selected Rate Card changes. No selected rate changes were saved.");
   }
 
   // Compatibility path for deployments that have the application code before
-  // the accompanying database migration. It retains the existing safeguards.
-  for (const update of updates) {
+  // the accompanying database migration. Bound concurrency avoids making a
+  // large confirmation wait on hundreds of sequential REST calls.
+  await inConcurrentBatches(updates, async (update) => {
     const card = await updateAdminRateCard(update.rateCardId, { rate: update.newRate, active: update.reactivate ? true : undefined, reason: update.reason }, update.adminId, { expectedPreviousRate: update.expectedPreviousRate });
     if (!card) throw new Error("A selected Rate Card changed after analysis. Re-analyse the workbook before confirming.");
-  }
+  });
 }
 
 async function finaliseImport(analysis: RateImportAnalysis, selectedIds: Set<string>, applied: Map<string, string>) {
@@ -175,11 +197,13 @@ async function finaliseImport(analysis: RateImportAnalysis, selectedIds: Set<str
   const { error: finaliseError } = await client.rpc("finalise_rate_import", { p_import_id: analysis.id, p_confirmed_at: confirmedAt, p_rows: auditRows });
   if (!finaliseError) return;
   if (!isMissingRpcFunction(finaliseError, "finalise_rate_import")) throw new Error("Rates were changed, but their import audit could not be finalised.");
-  const rowUpdates = await Promise.all(analysis.rows.map((row) => client.from("rate_import_rows").update({
-    action: selectedIds.has(row.id) ? row.action : "not_selected",
-    applied_rate_card_id: applied.get(row.id) || null,
-  }).eq("id", row.id).eq("import_id", analysis.id)));
-  if (rowUpdates.some(({ error }) => error)) throw new Error("Rates were changed, but their import-row audit could not be updated.");
+  await inConcurrentBatches(analysis.rows, async (row) => {
+    const { error } = await client.from("rate_import_rows").update({
+      action: selectedIds.has(row.id) ? row.action : "not_selected",
+      applied_rate_card_id: applied.get(row.id) || null,
+    }).eq("id", row.id).eq("import_id", analysis.id);
+    if (error) throw new Error("Rates were changed, but their import-row audit could not be updated.");
+  });
   const { error } = await client.from("rate_imports").update({ confirmed_at: confirmedAt, status: "confirmed" }).eq("id", analysis.id).eq("status", "reviewed");
   if (error) throw new Error("Rates were changed, but the source-import audit record could not be finalised.");
 }
@@ -189,16 +213,20 @@ export async function confirmAdminRateImport(input: { importId: string; selected
   const selected = new Set(input.selectedRowIds); const eligible = analysis.rows.filter((row) => selected.has(row.id) && (row.action === "create" || row.action === "update") && row.mapping);
   if (!eligible.length) throw new Error("Select at least one valid new or changed rate before confirming.");
   const currentCards = await listAdminRateCards();
+  const currentRateCards = indexRateCards(currentCards);
   const applied = new Map<string, string>(); const pendingUpdates: PreparedRateUpdate[] = []; let created = 0; let updated = 0; let revalidatedSkipped = 0;
   for (const row of eligible) {
     const reason = `Imported from ${analysis.fileName} on ${new Date().toLocaleDateString("en-GB")}; profile: ${analysis.profileName}.`;
-    const reconciliation = reconcileImportedRateConfiguration(row.mapping!, currentCards);
+    const configurationKey = canonicalRateConfigurationKey(row.mapping!);
+    const reconciliation = reconcileRateConfiguration(row.mapping!, currentRateCards.get(configurationKey) || []);
     if (reconciliation.action === "duplicate") throw new Error(`Source row ${row.sourceRow} matches multiple current Rate Cards. Resolve the duplicate and re-analyse the workbook.`);
     if (row.action === "create" && reconciliation.action !== "create") throw new Error(`Source row ${row.sourceRow} now matches an existing Rate Card. Re-analyse the workbook before confirming.`);
     if (row.action === "update" && reconciliation.action === "create") throw new Error(`The Rate Card for source row ${row.sourceRow} no longer exists. Re-analyse the workbook before confirming.`);
     if (row.action === "update" && reconciliation.action === "unchanged") { revalidatedSkipped += 1; continue; }
     if (row.action === "create") {
-      const result = await createAdminRateCard({ ...inputFromRow(row.mapping!), reason }, { existingCards: currentCards }); applied.set(row.id, result.card.id); currentCards.push(result.card); created += 1;
+      const result = await createAdminRateCard({ ...inputFromRow(row.mapping!), reason }, { existingCards: currentCards }); applied.set(row.id, result.card.id); currentCards.push(result.card);
+      const matchingCards = currentRateCards.get(configurationKey); if (matchingCards) matchingCards.push(result.card); else currentRateCards.set(configurationKey, [result.card]);
+      created += 1;
     } else if (reconciliation.existingRateCard) {
       const existingCard = reconciliation.existingRateCard;
       pendingUpdates.push({ rateCardId: existingCard.id, expectedPreviousRate: existingCard.rate, newRate: row.mapping!.rate, reactivate: Boolean(reconciliation.reactivate), reason, adminId: input.adminId });
