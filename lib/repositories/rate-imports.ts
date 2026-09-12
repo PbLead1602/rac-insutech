@@ -14,12 +14,31 @@ type DevelopmentImportStore = { analyses: RateImportAnalysis[] };
 type ReviewMetadata = { existingRateCardId?: string; reactivate?: boolean; sheetName: string };
 type PreparedRateUpdate = { rateCardId: string; expectedPreviousRate: number; newRate: number; reactivate: boolean; reason: string; adminId?: string };
 
-const IMPORT_FALLBACK_CONCURRENCY = 20;
+const IMPORT_FALLBACK_CONCURRENCY = 8;
+const RATE_UPDATE_MAX_ATTEMPTS = 3;
 
 async function inConcurrentBatches<T>(values: readonly T[], work: (value: T) => Promise<void>, batchSize = IMPORT_FALLBACK_CONCURRENCY) {
   for (let start = 0; start < values.length; start += batchSize) {
     await Promise.all(values.slice(start, start + batchSize).map(work));
   }
+}
+
+const retryDelay = (attempt: number) => new Promise<void>((resolve) => setTimeout(resolve, attempt * 150));
+
+async function applyRateUpdateWithRetry(update: PreparedRateUpdate) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= RATE_UPDATE_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      const card = await updateAdminRateCard(update.rateCardId, { rate: update.newRate, active: update.reactivate ? true : undefined, reason: update.reason }, update.adminId, { expectedPreviousRate: update.expectedPreviousRate });
+      if (!card) throw new Error("A selected Rate Card changed after analysis. Re-analyse the workbook before confirming.");
+      return;
+    } catch (error) {
+      lastError = error;
+      if (error instanceof Error && error.message.startsWith("A selected Rate Card changed after analysis.")) throw error;
+      if (attempt < RATE_UPDATE_MAX_ATTEMPTS) await retryDelay(attempt);
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("Could not update the rate card.");
 }
 
 function indexRateCards(cards: readonly QuotationRateCardRecord[]) {
@@ -166,27 +185,36 @@ async function applyPreparedRateUpdates(updates: PreparedRateUpdate[]) {
   const mode = integrationMode(serverEnv.supabaseServiceConfigured);
   if (mode === "live") {
     const client = getSupabaseServiceClient(); if (!client) throw new Error("Supabase service client is unavailable.");
+    const changes = updates.map((update) => ({
+      rate_card_id: update.rateCardId,
+      expected_previous_rate: update.expectedPreviousRate,
+      new_rate: update.newRate,
+      reactivate: update.reactivate,
+      reason: update.reason,
+      changed_by: update.adminId || null,
+    }));
     const { error } = await client.rpc("apply_rate_import_updates_v2", {
-      p_changes: updates.map((update) => ({
-        rate_card_id: update.rateCardId,
-        expected_previous_rate: update.expectedPreviousRate,
-        new_rate: update.newRate,
-        reactivate: update.reactivate,
-        reason: update.reason,
-        changed_by: update.adminId || null,
-      })),
+      p_changes: changes,
     });
     if (!error) return;
     if (!isMissingRpcFunction(error, "apply_rate_import_updates_v2")) throw new Error("Could not apply the selected Rate Card changes. No selected rate changes were saved.");
+
+    // Migration 24 used this earlier batch function. Prefer it on production
+    // databases that have not yet received the set-based V2 migration, rather
+    // than sending hundreds of individual REST updates at once.
+    const { error: legacyError } = await client.rpc("apply_rate_import_updates", {
+      p_changes: changes,
+    });
+    if (!legacyError) return;
+    if (!isMissingRpcFunction(legacyError, "apply_rate_import_updates")) {
+      console.warn("Legacy controlled-rate-import batch RPC failed; using throttled compatibility updates.", { code: legacyError.code, message: legacyError.message });
+    }
   }
 
   // Compatibility path for deployments that have the application code before
   // the accompanying database migration. Bound concurrency avoids making a
   // large confirmation wait on hundreds of sequential REST calls.
-  await inConcurrentBatches(updates, async (update) => {
-    const card = await updateAdminRateCard(update.rateCardId, { rate: update.newRate, active: update.reactivate ? true : undefined, reason: update.reason }, update.adminId, { expectedPreviousRate: update.expectedPreviousRate });
-    if (!card) throw new Error("A selected Rate Card changed after analysis. Re-analyse the workbook before confirming.");
-  });
+  await inConcurrentBatches(updates, applyRateUpdateWithRetry);
 }
 
 async function finaliseImport(analysis: RateImportAnalysis, selectedIds: Set<string>, applied: Map<string, string>) {
