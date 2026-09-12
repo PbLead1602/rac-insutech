@@ -298,12 +298,29 @@ export type RateImportReconciliation = {
   reason?: string;
 };
 
+type ExistingRateCardIndex = ReadonlyMap<string, QuotationRateCardRecord[]>;
+
 /**
- * Reconciles a supplier mapping to governed Rate Cards using a stable
- * configuration identity. Price deliberately remains outside that identity.
+ * Large supplier workbooks can produce hundreds of candidate configurations.
+ * Index the current Rate Cards once rather than re-normalising every card for
+ * every candidate. This keeps the exact canonical matching rules intact while
+ * avoiding an O(candidates × cards) CPU spike in the production Worker.
  */
-export function reconcileImportedRateConfiguration(mapping: ImportedRateConfiguration, existing: QuotationRateCardRecord[]): RateImportReconciliation {
-  const reconciliation = reconcileRateConfiguration(mapping, existing);
+function indexExistingRateCards(existing: readonly QuotationRateCardRecord[]): ExistingRateCardIndex {
+  const index = new Map<string, QuotationRateCardRecord[]>();
+  existing.forEach((card) => {
+    const key = canonicalRateConfigurationKey(card);
+    const matches = index.get(key);
+    if (matches) matches.push(card);
+    else index.set(key, [card]);
+  });
+  return index;
+}
+
+function withReconciliationReason(
+  mapping: ImportedRateConfiguration,
+  reconciliation: ReturnType<typeof reconcileRateConfiguration<QuotationRateCardRecord>>,
+): RateImportReconciliation {
   if (reconciliation.action === "create") return { ...reconciliation, reason: "No existing Rate Card matches this canonical configuration." };
   if (reconciliation.action === "duplicate") return { ...reconciliation, reason: "Multiple existing Rate Cards match this canonical configuration. Resolve the duplicate before importing." };
   const existingRateCard = reconciliation.existingRateCard!;
@@ -315,14 +332,23 @@ export function reconcileImportedRateConfiguration(mapping: ImportedRateConfigur
   };
 }
 
+/**
+ * Reconciles a supplier mapping to governed Rate Cards using a stable
+ * configuration identity. Price deliberately remains outside that identity.
+ */
+export function reconcileImportedRateConfiguration(mapping: ImportedRateConfiguration, existing: QuotationRateCardRecord[]): RateImportReconciliation {
+  return withReconciliationReason(mapping, reconcileRateConfiguration(mapping, existing));
+}
+
 function analyseCandidates(candidates: SourceCandidate[], existing: QuotationRateCardRecord[]): RateImportRow[] {
+  const existingRateCards = indexExistingRateCards(existing);
   const seen = new Set<string>();
   return candidates.map((candidate, index) => {
     const issues = [...candidate.issues];
     if (!candidate.variant || candidate.rate === undefined || !Number.isFinite(candidate.rate) || candidate.rate <= 0) return { id: `row-${index + 1}`, sourceRow: candidate.sourceRow, sheetName: candidate.sheetName, source: candidate.source, action: "invalid", confidence: candidate.confidence, issues: [...issues, ...(candidate.variant ? [] : ["No RAC configuration matched this row."]), ...(candidate.rate && candidate.rate <= 0 ? ["Rate must be greater than zero."] : [])] };
     const mapping = variantConfiguration(candidate.variant, candidate.rate);
     const key = canonicalRateConfigurationKey(mapping);
-    const reconciliation = reconcileImportedRateConfiguration(mapping, existing);
+    const reconciliation = withReconciliationReason(mapping, reconcileRateConfiguration(mapping, existingRateCards.get(key) || []));
     const current = reconciliation.existingRateCard;
     if (seen.has(key)) return { id: `row-${index + 1}`, sourceRow: candidate.sourceRow, sheetName: candidate.sheetName, source: candidate.source, mapping, action: "duplicate", confidence: candidate.confidence, issues: [...issues, "Duplicate configuration in this import. The first mapped row is retained."], ...(current ? { oldRate: current.rate, existingRateCardId: current.id } : {}) };
     seen.add(key);
