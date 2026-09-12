@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { builtUpNbrSelectionSchema, quotationCustomerSchema, quotationItemSchema } from "@/lib/validation/quotation";
+import { normalizeRate } from "@/lib/rates/rate-precision";
 
 const statuses = ["draft", "generated", "sent", "viewed", "follow_up", "revision_requested", "revised", "accepted", "po_received", "won", "lost", "expired", "cancelled"] as const;
 
@@ -24,7 +25,7 @@ const revisionItemSchema = z.object({
   suppliedUnit: z.string().trim().min(1).max(60),
   cartons: z.coerce.number().int().positive().optional(),
   technicalQuantity: z.string().trim().min(1, "Enter the supply quantity description.").max(500),
-  rate: z.coerce.number().finite().nonnegative(),
+  rate: z.coerce.number().finite().nonnegative().transform(normalizeRate),
   rateUnit: z.string().trim().min(1).max(80),
 });
 
@@ -35,7 +36,7 @@ const revisionItemSchema = z.object({
  * exception cannot be confused with an old browser-side catalogue price.
  */
 const adminStandardQuotationItemSchema = quotationItemSchema.extend({
-  rateOverride: z.coerce.number().finite().nonnegative().max(100000000).optional(),
+  rateOverride: z.coerce.number().finite().nonnegative().max(100000000).transform(normalizeRate).optional(),
 });
 
 const adminBuiltUpNbrSelectionSchema = builtUpNbrSelectionSchema.extend({

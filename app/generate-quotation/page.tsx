@@ -13,6 +13,7 @@ import { env } from "@/lib/env";
 import { clearQuoteLeadDraft, parseQuoteLeadDraft, quoteLeadDraftStorageValue, type QuoteLeadDraft } from "@/lib/quotation-draft";
 import {
   calculateQuoteLine,
+  defaultQuoteOrderUnit,
   getQuotationVariant,
   findQuoteVariant,
   quotationProducts,
@@ -69,15 +70,6 @@ function isClassONitrileTube(productId: QuoteProductId) {
   return productId === "nitrile-rubber-tube";
 }
 
-function orderUnitForProduct(productId: QuoteProductId): QuoteOrderUnit {
-  if (isCartonTubeProduct(productId)) return "carton";
-  if (productId === "xlpe-tube") return "running_metre";
-  if (productId === "open-cell-nitrile-rubber-sheet") return "box";
-  if (productId === "insulation-tape") return "unit";
-  if (productId === "insulation-adhesive") return "drum";
-  return "roll";
-}
-
 function createConfigurationRow(productId: QuoteProductId): ConfigurationRow {
   configurationRowSequence += 1;
   return {
@@ -85,7 +77,7 @@ function createConfigurationRow(productId: QuoteProductId): ConfigurationRow {
     productId,
     configuration: initialConfiguration(productId),
     quantity: "1",
-    orderUnit: orderUnitForProduct(productId),
+    orderUnit: defaultQuoteOrderUnit(productId),
   };
 }
 
@@ -356,7 +348,7 @@ function GenerateQuotationWorkspace() {
   const changeRowProduct = (rowId: string, productId: QuoteProductId) => {
     updateRows((current) => current.map((row) => row.id === rowId ? {
       ...row, productId, configuration: initialConfiguration(productId),
-      orderUnit: orderUnitForProduct(productId),
+      orderUnit: defaultQuoteOrderUnit(productId),
     } : row));
   };
   const updateRow = (rowId: string, updates: Partial<Pick<ConfigurationRow, "quantity" | "orderUnit">>) => {

@@ -1,4 +1,5 @@
 import { nitrileTubeClassORateCard } from "@/lib/quotations/nitrile-tube-rate-card";
+import { normalizeRate } from "@/lib/rates/rate-precision";
 import { nitrileTubeClass1RateCard } from "@/lib/quotations/nitrile-tube-class1-rate-card";
 import { xlpeTubeRateCard } from "@/lib/quotations/xlpe-tube-rate-card";
 
@@ -244,7 +245,7 @@ export const quotationVariants: QuoteVariant[] = [
   ...class1TubeVariants,
   ...insulationTapeVariants,
   ...insulationAdhesiveVariants,
-];
+].map((variant) => ({ ...variant, rate: normalizeRate(variant.rate) }));
 
 export const quotationProducts: Array<{ id: QuoteProductId; name: string; description: string }> = [
   { id: "xlpe-sheet", name: "XLPE Sheet Insulation", description: "Rate-card dimensions and lamination options for closed-cell sheet insulation." },
@@ -256,6 +257,16 @@ export const quotationProducts: Array<{ id: QuoteProductId; name: string; descri
   { id: "insulation-tape", name: "Insulation Tape", description: "Tape type, roll width and rate-per-unit options from the supplied rate list." },
   { id: "insulation-adhesive", name: "Insulation Adhesive", description: "Adhesive grades, drum sizes and rate-per-litre options from the supplied rate list." },
 ];
+
+/** The requested quantity unit used when a new quotation line is created. */
+export function defaultQuoteOrderUnit(productId: QuoteProductId): QuoteOrderUnit {
+  if (productId === "nitrile-rubber-tube" || productId === "nitrile-rubber-tube-class-1") return "carton";
+  if (productId === "xlpe-tube") return "running_metre";
+  if (productId === "open-cell-nitrile-rubber-sheet") return "box";
+  if (productId === "insulation-tape") return "unit";
+  if (productId === "insulation-adhesive") return "drum";
+  return "roll";
+}
 
 export function getQuotationVariant(id: string) {
   return quotationVariants.find((variant) => variant.id === id);
@@ -284,6 +295,7 @@ export function findQuoteVariant(configuration: Pick<QuoteVariant, "productId" |
 
 export function calculateQuoteLine(variant: QuoteVariant, quantity: number, orderUnit: QuoteOrderUnit): CalculatedQuoteLine {
   if (!Number.isFinite(quantity) || quantity <= 0) throw new Error("Enter a quantity greater than zero.");
+  const rate = normalizeRate(variant.rate);
   if (variant.orderUnit === "roll" && orderUnit !== "roll") throw new Error("This sheet product is quoted by roll.");
   if (variant.orderUnit === "square_metre" && orderUnit !== "square_metre") throw new Error("This sheet product is quoted by square metre.");
   if (variant.orderUnit === "box" && orderUnit !== "box") throw new Error("This product is quoted by box packing.");
@@ -307,9 +319,9 @@ export function calculateQuoteLine(variant: QuoteVariant, quantity: number, orde
       suppliedUnit: "square metres",
       rolls,
       technicalQuantity: `${suppliedQuantity.toFixed(2)} m² (${rolls} roll${rolls === 1 ? "" : "s"} × ${rollArea.toFixed(2)} m²)`,
-      rate: variant.rate,
+      rate,
       rateUnit: `per ${variant.rateUnit}`,
-      amount: Number((suppliedQuantity * variant.rate).toFixed(2)),
+      amount: Number((suppliedQuantity * rate).toFixed(2)),
       provisional: true,
     };
   }
@@ -326,9 +338,9 @@ export function calculateQuoteLine(variant: QuoteVariant, quantity: number, orde
       suppliedQuantity,
       suppliedUnit: "square metres",
       technicalQuantity: `${suppliedQuantity.toFixed(2)} m²${packNote}`,
-      rate: variant.rate,
+      rate,
       rateUnit: `per ${variant.rateUnit}`,
-      amount: Number((suppliedQuantity * variant.rate).toFixed(2)),
+      amount: Number((suppliedQuantity * rate).toFixed(2)),
       provisional: true,
     };
   }
@@ -346,9 +358,9 @@ export function calculateQuoteLine(variant: QuoteVariant, quantity: number, orde
       suppliedQuantity,
       suppliedUnit: "square metres",
       technicalQuantity: `${quantity} box${quantity === 1 ? "" : "es"} × ${boxSquareMetres} m² = ${suppliedQuantity.toFixed(2)} m²`,
-      rate: variant.rate,
+      rate,
       rateUnit: `per ${variant.rateUnit}`,
-      amount: Number((suppliedQuantity * variant.rate).toFixed(2)),
+      amount: Number((suppliedQuantity * rate).toFixed(2)),
       provisional: true,
     };
   }
@@ -367,9 +379,9 @@ export function calculateQuoteLine(variant: QuoteVariant, quantity: number, orde
       suppliedUnit: "tubes",
       cartons: quantity,
       technicalQuantity: `${quantity} carton${quantity === 1 ? "" : "s"} × ${tubesPerCarton} tubes = ${suppliedQuantity} tubes (${variant.tubeLength || "1830 +/- 50 mm"} each)`,
-      rate: variant.rate,
+      rate,
       rateUnit: `per ${variant.rateUnit}`,
-      amount: Number((suppliedQuantity * variant.rate).toFixed(2)),
+      amount: Number((suppliedQuantity * rate).toFixed(2)),
       provisional: true,
     };
   }
@@ -387,9 +399,9 @@ export function calculateQuoteLine(variant: QuoteVariant, quantity: number, orde
       suppliedQuantity,
       suppliedUnit: "units",
       technicalQuantity: `${quantity} ${unitLabel}${quantity === 1 ? "" : "s"}`,
-      rate: variant.rate,
+      rate,
       rateUnit: `per ${variant.rateUnit}`,
-      amount: Number((suppliedQuantity * variant.rate).toFixed(2)),
+      amount: Number((suppliedQuantity * rate).toFixed(2)),
       provisional: true,
     };
   }
@@ -407,9 +419,9 @@ export function calculateQuoteLine(variant: QuoteVariant, quantity: number, orde
       suppliedQuantity,
       suppliedUnit: "litres",
       technicalQuantity: `${quantity} drum${quantity === 1 ? "" : "s"} × ${litresPerDrum} L = ${suppliedQuantity.toFixed(2)} litres`,
-      rate: variant.rate,
+      rate,
       rateUnit: `per ${variant.rateUnit}`,
-      amount: Number((suppliedQuantity * variant.rate).toFixed(2)),
+      amount: Number((suppliedQuantity * rate).toFixed(2)),
       provisional: true,
     };
   }
@@ -431,9 +443,9 @@ export function calculateQuoteLine(variant: QuoteVariant, quantity: number, orde
     cartons,
     // @ts-expect-error Running-metre products override this legacy display text below.
     technicalQuantity: `${suppliedQuantity.toFixed(0)} running metres (${cartons} carton${cartons === 1 ? "" : "s"} × ${pack} rm)`,
-    rate: variant.rate,
+    rate,
     rateUnit: `per ${variant.rateUnit}`,
-    amount: Number((suppliedQuantity * variant.rate).toFixed(2)),
+    amount: Number((suppliedQuantity * rate).toFixed(2)),
     provisional: true,
     ...{ technicalQuantity: `${suppliedQuantity.toFixed(0)} running metres (${packingText})`, cartons: orderUnit === "carton" ? cartons : undefined },
   };

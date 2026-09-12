@@ -5,6 +5,7 @@ import { integrationMode, type IntegrationMode } from "@/lib/env";
 import { serverEnv } from "@/lib/env/server";
 import type { CustomBuiltUpNbrSnapshot, QuotationCustomer, QuotationLineRecord, QuotationNote, QuotationRecord, QuotationSource, QuotationStatus } from "@/lib/db/types";
 import { getServerPricedVariant } from "@/lib/quotations/pricing";
+import { normalizeRate } from "@/lib/rates/rate-precision";
 import { nextQuotationStatusForPatch, quotationShouldExpire } from "@/lib/quotations/status";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { persistentDevelopmentStore } from "@/lib/development/persistent-store";
@@ -439,9 +440,9 @@ export async function getCurrentQuotationRevisionRates(id: string): Promise<Curr
   return Promise.all(detail.quotation.items.map(async (item) => {
     try {
       const variant = await getServerPricedVariant(item.variantId);
-      return variant ? { variantId: item.variantId, rate: variant.rate, rateUnit: `per ${variant.rateUnit}`, found: true } : { variantId: item.variantId, rate: item.rate, rateUnit: item.rateUnit, found: false };
+      return variant ? { variantId: item.variantId, rate: normalizeRate(variant.rate), rateUnit: `per ${variant.rateUnit}`, found: true } : { variantId: item.variantId, rate: normalizeRate(item.rate), rateUnit: item.rateUnit, found: false };
     } catch {
-      return { variantId: item.variantId, rate: item.rate, rateUnit: item.rateUnit, found: false };
+      return { variantId: item.variantId, rate: normalizeRate(item.rate), rateUnit: item.rateUnit, found: false };
     }
   }));
 }

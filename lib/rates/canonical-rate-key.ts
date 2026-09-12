@@ -1,4 +1,5 @@
 import type { QuotationRateCardRecord } from "@/lib/db/types";
+import { normalizeRate } from "@/lib/rates/rate-precision";
 
 /**
  * Rate Cards existed before the V2 catalogue used one consistent display
@@ -153,5 +154,5 @@ export function reconcileRateConfiguration<T extends RateConfigurationIdentity &
 
 export function parseImportedRate(value: string | number | null | undefined) {
   const normalized = repairedText(value).replace(/[₹,\s]/g, "").replace(/^INR/i, "");
-  return /^-?\d+(?:\.\d+)?$/.test(normalized) ? Number(normalized) : undefined;
+  return /^-?\d+(?:\.\d+)?$/.test(normalized) ? normalizeRate(Number(normalized)) : undefined;
 }

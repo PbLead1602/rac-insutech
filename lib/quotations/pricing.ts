@@ -4,6 +4,7 @@ import { integrationMode } from "@/lib/env";
 import { serverEnv } from "@/lib/env/server";
 import { calculateQuoteLine, getQuotationVariant, type CalculatedQuoteLine, type QuoteOrderUnit, type QuoteVariant } from "@/lib/quotations/catalogue";
 import { getActiveRateCardForVariant } from "@/lib/repositories/rates";
+import { normalizeRate } from "@/lib/rates/rate-precision";
 
 /**
  * The browser uses the development catalogue only to constrain valid options.
@@ -20,7 +21,7 @@ export async function getServerPricedVariant(variantId: string): Promise<QuoteVa
   if (card.orderUnit !== developmentVariant.orderUnit) throw new Error("The approved rate card has an incompatible pricing unit.");
   return {
     ...developmentVariant,
-    rate: Number(card.rate),
+    rate: normalizeRate(Number(card.rate)),
     rateUnit: card.rateUnit as QuoteVariant["rateUnit"],
     rollAreaM2: card.rollAreaM2,
     packRunningMetres: card.packRunningMetres,
@@ -47,7 +48,7 @@ export async function priceAdminStandardQuotationLine(input: {
 
   return {
     ...calculated,
-    rate: input.rateOverride,
-    amount: Number((calculated.suppliedQuantity * input.rateOverride).toFixed(2)),
+    rate: normalizeRate(input.rateOverride),
+    amount: Number((calculated.suppliedQuantity * normalizeRate(input.rateOverride)).toFixed(2)),
   };
 }

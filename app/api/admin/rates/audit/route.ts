@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAdminRequestContext } from "@/lib/auth/admin-server";
 import { getQuotationVariant, quotationProducts, quotationVariants } from "@/lib/quotations/catalogue";
 import { getActiveRateCardsForVariants } from "@/lib/repositories/rates";
+import { normalizeRate } from "@/lib/rates/rate-precision";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ export async function POST(request: Request) {
       if (!variant) return { variantId, available: false, message: "This product configuration is not available." };
       if (!card) return { variantId, available: false, message: "No approved active Rate Card is available for this configuration." };
       if (card.orderUnit !== variant.orderUnit) return { variantId, available: false, message: "The approved Rate Card has an incompatible pricing unit." };
-      return { variantId, rate: card.rate, rateUnit: card.rateUnit, available: true };
+      return { variantId, rate: normalizeRate(card.rate), rateUnit: card.rateUnit, available: true };
     });
     return NextResponse.json({ ok: true, rates }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {

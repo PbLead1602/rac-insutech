@@ -9,15 +9,16 @@ import { BuiltUpNbrConfigurator, type CustomBuiltUpNbrDraft } from "@/components
 import { quotationVariants, getQuotationVariant } from "@/lib/quotations/catalogue";
 import { calculateBuiltUpCylinderInsulation, thicknessMmFromRateCardLabel } from "@/lib/quotations/built-up-nbr";
 import { quotationStatusLabel, quotationStatusOptions } from "@/lib/quotations/status";
+import { normalizeRate } from "@/lib/rates/rate-precision";
 
 type QuotationDetail = { quotation: QuotationRecord; notes: QuotationNote[] };
 type RevisionLine = Omit<QuotationRecord["items"][number], "amount" | "provisional"> & { discountBaseRate: number };
 type RevisionPayload = { customer: QuotationRecord["customer"]; items: Array<Omit<RevisionLine, "discountBaseRate">>; customBuiltUpItems: CustomBuiltUpNbrDraft[]; gstRate: number; validUntil?: string; internalNotes?: string; reason: string };
 
-const currency = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 });
+const currency = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const localDateTime = (value?: string) => value ? new Date(value).toISOString().slice(0, 16) : "";
 const localDate = (value?: string) => value ? value.slice(0, 10) : "";
-const discountedRate = (rate: number, discountPercent: number) => Number((Math.max(0, rate) * (1 - discountPercent / 100)).toFixed(5));
+const discountedRate = (rate: number, discountPercent: number) => normalizeRate(Math.max(0, rate) * (1 - discountPercent / 100));
 
 function AdminBuiltUpNbrBreakdown({ item }: { item: QuotationRecord["items"][number] }) {
   const custom = item.customBuiltUp;
@@ -137,7 +138,7 @@ function QuotationDrawer({ detail, onClose, onUpdate, onAddNote, onCreateRevisio
 
 function RevisionEditor({ quotation, onClose, onSave }: { quotation: QuotationRecord; onClose: () => void; onSave: (payload: RevisionPayload) => Promise<boolean> }) {
   const [customer, setCustomer] = useState(quotation.customer);
-  const [items, setItems] = useState<RevisionLine[]>(() => quotation.items.filter((item) => !item.customBuiltUp).map(({ amount: _amount, provisional: _provisional, ...item }) => ({ ...item, discountBaseRate: item.rate })));
+  const [items, setItems] = useState<RevisionLine[]>(() => quotation.items.filter((item) => !item.customBuiltUp).map(({ amount: _amount, provisional: _provisional, ...item }) => ({ ...item, rate: normalizeRate(item.rate), discountBaseRate: normalizeRate(item.rate) })));
   const [customBuiltUpItems, setCustomBuiltUpItems] = useState<CustomBuiltUpNbrDraft[]>(() => quotation.items.flatMap((item, index) => item.customBuiltUp ? [{ id: `revision-built-up-${index}`, materialClass: item.customBuiltUp.materialClassSnapshot, baseDiameterMm: item.customBuiltUp.baseDiameterMm, pipeLengthM: item.customBuiltUp.pipeLengthM, requiredTotalThicknessMm: item.customBuiltUp.requiredTotalThicknessMm, layers: item.customBuiltUp.layers.map((layer) => ({ variantId: layer.variantId })) }] : []));
   const [editingBuiltUpItem, setEditingBuiltUpItem] = useState<CustomBuiltUpNbrDraft | null>(null);
   const [gstRate, setGstRate] = useState(quotation.gstRate);
@@ -162,9 +163,9 @@ function RevisionEditor({ quotation, onClose, onSave }: { quotation: QuotationRe
     setItems((current) => current.map((item) => ({ ...item, rate: discountedRate(item.discountBaseRate, nextDiscount) })));
   };
   const updateRate = (index: number, value: number) => {
-    const rate = Number.isFinite(value) ? Math.max(0, value) : 0;
+    const rate = Number.isFinite(value) ? normalizeRate(Math.max(0, value)) : 0;
     const multiplier = 1 - discountPercentRef.current / 100;
-    updateItem(index, { rate, discountBaseRate: multiplier > 0 ? Number((rate / multiplier).toFixed(5)) : rate });
+    updateItem(index, { rate, discountBaseRate: multiplier > 0 ? normalizeRate(rate / multiplier) : rate });
   };
   const addItem = () => setItems((current) => [...current, { variantId: `admin-manual-${Date.now()}`, productName: "Additional material", configuration: "Enter product configuration", requestedQuantity: 1, requestedUnit: "unit", suppliedQuantity: 1, suppliedUnit: "unit", technicalQuantity: "1 unit", rate: 0, discountBaseRate: 0, rateUnit: "per unit" }]);
   const submit = async (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); setBusy(true); setError(""); const saved = await onSave({ customer, items: items.map(({ discountBaseRate: _discountBaseRate, ...item }) => item), customBuiltUpItems, gstRate, validUntil, internalNotes, reason }); if (!saved) setError("Could not create the quotation revision. Check all mandatory details."); else onClose(); setBusy(false); };
