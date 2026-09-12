@@ -162,8 +162,8 @@ export async function confirmAdminRateImport(input: { importId: string; selected
     if (row.action === "create") {
       const result = await createAdminRateCard({ ...inputFromRow(row.mapping!), reason }); applied.set(row.id, result.card.id); currentCards.push(result.card); created += 1;
     } else if (reconciliation.existingRateCard) {
-      const card = await updateAdminRateCard(reconciliation.existingRateCard.id, { rate: row.mapping!.rate, active: reconciliation.reactivate ? true : undefined, reason }, input.adminId);
-      if (!card) throw new Error(`The Rate Card for source row ${row.sourceRow} no longer exists. Re-analyse the workbook before confirming.`);
+      const card = await updateAdminRateCard(reconciliation.existingRateCard.id, { rate: row.mapping!.rate, active: reconciliation.reactivate ? true : undefined, reason }, input.adminId, { expectedPreviousRate: reconciliation.existingRateCard.rate });
+      if (!card) throw new Error(`The Rate Card for source row ${row.sourceRow} changed after analysis. Re-analyse the workbook before confirming.`);
       const index = currentCards.findIndex((candidate) => candidate.id === card.id); if (index >= 0) currentCards[index] = card;
       applied.set(row.id, card.id); updated += 1;
     }
