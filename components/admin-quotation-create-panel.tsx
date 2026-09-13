@@ -118,6 +118,7 @@ export default function AdminQuotationCreatePanel() {
   const [customPreviewVariantIds, setCustomPreviewVariantIds] = useState<string[]>([]);
   const [approvedRates, setApprovedRates] = useState<Record<string, ApprovedRate>>({});
   const [rateErrors, setRateErrors] = useState<Record<string, string>>({});
+  const [rateInputDrafts, setRateInputDrafts] = useState<Record<string, string>>({});
   const builtUpBasketRef = useRef<HTMLElement | null>(null);
   const shouldScrollToBuiltUpBasket = useRef(false);
   const [builtUpNbrWastagePercent, setBuiltUpNbrWastagePercent] = useState(5);
@@ -334,6 +335,7 @@ export default function AdminQuotationCreatePanel() {
 
   const updateRowConfiguration = (rowId: string, field: keyof Configuration, value: string) => {
     setError("");
+    clearRateInputDraft(rowId);
     setConfigurationRows((current) => current.map((row) => {
       if (row.id !== rowId) return row;
       const configuration = { ...row.configuration, [field]: value };
@@ -353,6 +355,7 @@ export default function AdminQuotationCreatePanel() {
 
   const changeRowProduct = (rowId: string, productId: QuoteProductId) => {
     setError("");
+    clearRateInputDraft(rowId);
     setConfigurationRows((current) => current.map((row) => row.id === rowId ? {
       ...createConfigurationRow(productId), id: row.id,
     } : row));
@@ -367,9 +370,25 @@ export default function AdminQuotationCreatePanel() {
     }));
   };
 
+  const rateInputValue = (rowId: string, rate: number | undefined) => rateInputDrafts[rowId] ?? formatRateInput(rate);
+  const clearRateInputDraft = (rowId: string) => {
+    setRateInputDrafts((current) => {
+      if (!(rowId in current)) return current;
+      const { [rowId]: _draft, ...remaining } = current;
+      return remaining;
+    });
+  };
+  const updateRateOverride = (rowId: string, value: string) => {
+    setRateInputDrafts((current) => ({ ...current, [rowId]: value }));
+    if (value.trim() === "") { updateRow(rowId, { rateOverride: undefined }); return; }
+    const rate = Number(value);
+    if (Number.isFinite(rate) && rate >= 0) updateRow(rowId, { rateOverride: rate });
+  };
+
   const removeRow = (rowId: string) => {
     setConfigurationRows((current) => current.filter((row) => row.id !== rowId));
     setExpandedMobileConfigurationLineId((current) => current === rowId ? null : current);
+    clearRateInputDraft(rowId);
   };
 
   const registeredCompanies = useMemo(() => [...new Set(registeredCustomers.map(registeredCustomerCompany))].sort((left, right) => left.localeCompare(right)), [registeredCustomers]);
@@ -504,7 +523,7 @@ export default function AdminQuotationCreatePanel() {
               <td><select aria-label={`Size or packing for row ${index + 1}`} value={configuration.size} onChange={(event) => updateRowConfiguration(row.id, "size", event.target.value)}>{sizes.map((value) => <option key={value} value={value}>{value}</option>)}</select></td>
               <td><input aria-label={`Order quantity for row ${index + 1}`} type="number" min="1" step="1" value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} /></td>
               <td><select aria-label={`Quantity unit for row ${index + 1}`} value={row.orderUnit} onChange={(event) => updateRow(row.id, { orderUnit: event.target.value as QuoteOrderUnit })}>{units.map((unit) => <option value={unit.value} key={unit.value}>{unit.label}</option>)}</select></td>
-              <td className="admin-configuration-rate"><input aria-label={`Rate for row ${index + 1}`} type="number" min="0" step="0.01" value={formatRateInput(rate)} onChange={(event) => updateRow(row.id, { rateOverride: event.target.value === "" ? undefined : Number(event.target.value) })} /><small>{line ? `per ${line.rateUnit}` : error || "Select configuration"}</small></td>
+              <td className="admin-configuration-rate"><input aria-label={`Rate for row ${index + 1}`} type="number" min="0" step="0.01" inputMode="decimal" value={rateInputValue(row.id, rate)} onChange={(event) => updateRateOverride(row.id, event.target.value)} onBlur={() => clearRateInputDraft(row.id)} /><small>{line ? `per ${line.rateUnit}` : error || "Select configuration"}</small></td>
               <td className="admin-configuration-subtotal"><strong>{line ? currency.format(line.amount) : "-"}</strong><small>{error || line?.technicalQuantity}</small></td>
               <td className="admin-configuration-remove"><button type="button" onClick={() => removeRow(row.id)} aria-label="Remove quotation line" title="Remove line"><Trash2 size={14} /></button></td>
             </tr>;
@@ -533,7 +552,7 @@ export default function AdminQuotationCreatePanel() {
                 <div className="admin-mobile-configuration-field-pair admin-mobile-configuration-field-pair--product"><label>Product<select aria-label={`Product for row ${index + 1}`} value={row.productId} onChange={(event) => changeRowProduct(row.id, event.target.value as QuoteProductId)}>{quotationProducts.map((product) => <option value={product.id} key={product.id}>{product.name}</option>)}</select></label><label>Thickness<select aria-label={`Thickness for row ${index + 1}`} value={configuration.thickness} onChange={(event) => updateRowConfiguration(row.id, "thickness", event.target.value)}>{thicknesses.map((value) => <option key={value} value={value}>{value}</option>)}</select></label></div>
                 <div className="admin-mobile-configuration-field-pair"><label>Lamination<select aria-label={`Lamination for row ${index + 1}`} value={configuration.lamination} onChange={(event) => updateRowConfiguration(row.id, "lamination", event.target.value)}>{laminations.map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label>Material class<select aria-label={`Material class for row ${index + 1}`} value={configuration.materialClass} onChange={(event) => updateRowConfiguration(row.id, "materialClass", event.target.value)}>{materialClasses.map((value) => <option key={value} value={value}>{value}</option>)}</select></label></div>
                 <label className="admin-mobile-configuration-field-full">Size / packing<select aria-label={`Size or packing for row ${index + 1}`} title={configuration.size} value={configuration.size} onChange={(event) => updateRowConfiguration(row.id, "size", event.target.value)}>{sizes.map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
-                <div className="admin-mobile-configuration-quantity-fields"><label>Order quantity<input aria-label={`Order quantity for row ${index + 1}`} type="number" min="1" step="1" value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} /></label><label>Quantity unit<select aria-label={`Quantity unit for row ${index + 1}`} value={row.orderUnit} onChange={(event) => updateRow(row.id, { orderUnit: event.target.value as QuoteOrderUnit })}>{units.map((unit) => <option value={unit.value} key={unit.value}>{unit.label}</option>)}</select></label><label>Rate / unit<input aria-label={`Rate for row ${index + 1}`} type="number" min="0" step="0.01" value={formatRateInput(rate)} onChange={(event) => updateRow(row.id, { rateOverride: event.target.value === "" ? undefined : Number(event.target.value) })} /><small>{line ? `per ${line.rateUnit}` : error || "Select configuration"}</small></label></div>
+                <div className="admin-mobile-configuration-quantity-fields"><label>Order quantity<input aria-label={`Order quantity for row ${index + 1}`} type="number" min="1" step="1" value={row.quantity} onChange={(event) => updateRow(row.id, { quantity: event.target.value })} /></label><label>Quantity unit<select aria-label={`Quantity unit for row ${index + 1}`} value={row.orderUnit} onChange={(event) => updateRow(row.id, { orderUnit: event.target.value as QuoteOrderUnit })}>{units.map((unit) => <option value={unit.value} key={unit.value}>{unit.label}</option>)}</select></label><label>Rate / unit<input aria-label={`Rate for row ${index + 1}`} type="number" min="0" step="0.01" inputMode="decimal" value={rateInputValue(row.id, rate)} onChange={(event) => updateRateOverride(row.id, event.target.value)} onBlur={() => clearRateInputDraft(row.id)} /><small>{line ? `per ${line.rateUnit}` : error || "Select configuration"}</small></label></div>
               </div>}
             </article>;
           })}</div>
