@@ -167,9 +167,9 @@ function termsForTransport(transport: string) {
   if (transport === "At Actual") return quotationTerms;
   const label = transportForPdf(transport);
   return quotationTerms.map((term, index) => index === 4
-    ? `5. Transportation: ${label}.`
+    ? `5. Transportation: ${label}. GST is applicable on the fixed transportation charge.`
     : index === 5
-      ? `6. Prices are Basic Ex-works + 18% GST Extra + Transportation: ${label}.`
+      ? `6. Prices are Basic Ex-works + 18% GST Extra on material and fixed transportation: ${label}.`
       : term);
 }
 
@@ -310,8 +310,8 @@ function drawQuotationPage(quotation: QuotationRecord, items: QuotationRecord["i
   if (isLastPage) {
     y -= 18;
     command.push("q", "0.93 0.98 0.98 rg", `376 ${y - 52} 188 66 re`, "f", "Q", "q", "0.70 0.87 0.91 RG", "0.5 w", `376 ${y - 52} 188 66 re`, "S", "Q");
-    text(command, ["Subtotal", `GST (${quotation.gstRate}%)`, "Transport", "Grand total"], 390, y, 8.35, "0.2 0.29 0.4 rg", 16);
-    text(command, [money(quotation.subtotal), money(quotation.gstAmount), transportForPdf(quotation.transport), money(quotation.total)], 493, y, 8.35, brand, 16, "F2");
+    text(command, ["Subtotal", "Transportation", `GST (${quotation.gstRate}%)`, "Quotation total"], 390, y, 8.35, "0.2 0.29 0.4 rg", 16);
+    text(command, [money(quotation.subtotal), transportForPdf(quotation.transport), money(quotation.gstAmount), money(quotation.total)], 493, y, 8.35, brand, 16, "F2");
     const termY = Math.max(142, y - 78);
     command.push("q", "0.10 0.78 0.72 rg", `48 ${termY - 3} 3 11 re`, "f", "Q");
     text(command, ["TERMS AND CONDITIONS"], 58, termY, 8.4, accent, 10, "F2");
