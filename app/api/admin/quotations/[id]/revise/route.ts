@@ -16,6 +16,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       customer: parsed.data.customer,
       items: [...parsed.data.items, ...customItems],
       gstRate: parsed.data.gstRate,
+      transportMode: parsed.data.transportMode,
+      transportCharge: parsed.data.transportCharge,
       validUntil: parsed.data.validUntil || undefined,
       internalNotes: parsed.data.internalNotes,
       reason: parsed.data.reason,

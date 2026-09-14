@@ -159,6 +159,20 @@ const quotationTerms = [
   "9. Validity: This offer is valid only for 7 days from the date of quotation.",
 ];
 
+function transportForPdf(transport: string) {
+  return transport.replace(/^₹\s*/, "INR ");
+}
+
+function termsForTransport(transport: string) {
+  if (transport === "At Actual") return quotationTerms;
+  const label = transportForPdf(transport);
+  return quotationTerms.map((term, index) => index === 4
+    ? `5. Transportation: ${label}.`
+    : index === 5
+      ? `6. Prices are Basic Ex-works + 18% GST Extra + Transportation: ${label}.`
+      : term);
+}
+
 function lines(value: string, width = 80) {
   const words = value.split(/\s+/).filter(Boolean);
   const result: string[] = [];
@@ -297,11 +311,11 @@ function drawQuotationPage(quotation: QuotationRecord, items: QuotationRecord["i
     y -= 18;
     command.push("q", "0.93 0.98 0.98 rg", `376 ${y - 52} 188 66 re`, "f", "Q", "q", "0.70 0.87 0.91 RG", "0.5 w", `376 ${y - 52} 188 66 re`, "S", "Q");
     text(command, ["Subtotal", `GST (${quotation.gstRate}%)`, "Transport", "Grand total"], 390, y, 8.35, "0.2 0.29 0.4 rg", 16);
-    text(command, [money(quotation.subtotal), money(quotation.gstAmount), "At Actual", money(quotation.total)], 493, y, 8.35, brand, 16, "F2");
+    text(command, [money(quotation.subtotal), money(quotation.gstAmount), transportForPdf(quotation.transport), money(quotation.total)], 493, y, 8.35, brand, 16, "F2");
     const termY = Math.max(142, y - 78);
     command.push("q", "0.10 0.78 0.72 rg", `48 ${termY - 3} 3 11 re`, "f", "Q");
     text(command, ["TERMS AND CONDITIONS"], 58, termY, 8.4, accent, 10, "F2");
-    text(command, quotationTerms, 48, termY - 13, 6.65, "0.24 0.34 0.47 rg", 9);
+    text(command, termsForTransport(quotation.transport), 48, termY - 13, 6.65, "0.24 0.34 0.47 rg", 9);
   } else {
     text(command, ["Continued on next page."], 48, 57, 7.3, "0.29 0.4 0.53 rg");
   }

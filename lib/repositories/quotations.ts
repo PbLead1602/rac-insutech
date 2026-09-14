@@ -6,6 +6,7 @@ import { serverEnv } from "@/lib/env/server";
 import type { CustomBuiltUpNbrSnapshot, QuotationCustomer, QuotationLineRecord, QuotationNote, QuotationRecord, QuotationSource, QuotationStatus } from "@/lib/db/types";
 import { getServerPricedVariant } from "@/lib/quotations/pricing";
 import { normalizeRate } from "@/lib/rates/rate-precision";
+import { parseStoredTransport, resolveTransport, type TransportMode } from "@/lib/quotations/transport";
 import { nextQuotationStatusForPatch, quotationShouldExpire } from "@/lib/quotations/status";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { persistentDevelopmentStore } from "@/lib/development/persistent-store";
@@ -25,6 +26,7 @@ export type CreateQuotationInput = {
   gstRate: number;
   gstAmount: number;
   total: number;
+  transport?: string;
   source?: QuotationSource;
   status?: QuotationStatus;
   validUntil?: string;
@@ -39,6 +41,8 @@ export type CreateAdminQuotationInput = {
   customer: QuotationCustomer;
   items: Array<Omit<QuotationLineRecord, "amount" | "provisional">>;
   gstRate: number;
+  transportMode?: TransportMode;
+  transportCharge?: number;
   validUntil?: string;
   internalNotes?: string;
   customerId?: string;
@@ -60,6 +64,8 @@ export type CreateQuotationRevisionInput = {
   customer: QuotationCustomer;
   items: Array<Omit<QuotationLineRecord, "amount" | "provisional">>;
   gstRate: number;
+  transportMode?: TransportMode;
+  transportCharge?: number;
   validUntil?: string;
   internalNotes?: string;
   reason: string;
@@ -152,7 +158,7 @@ function quotationFromRow(quotation: Record<string, unknown>, items: Record<stri
     gstRate: Number(quotation.gst_rate || 0),
     gstAmount: Number(quotation.gst_amount || 0),
     total: Number(quotation.total || 0),
-    transport: "At Actual",
+    transport: String(quotation.transport || "At Actual"),
     paymentTerms: String(quotation.payment_terms || "100% Advance along with Order."),
     validityDays: Number(quotation.validity_days || 7),
     status: quotation.status as QuotationStatus,
@@ -248,7 +254,7 @@ export async function createQuotation(input: CreateQuotationInput): Promise<Save
     gstRate: input.gstRate,
     gstAmount: input.gstAmount,
     total: input.total,
-    transport: "At Actual",
+    transport: input.transport || "At Actual",
     paymentTerms: "100% Advance along with Order.",
     validityDays: 7,
     validUntil: input.validUntil || validityDate(createdAt, 7),
@@ -322,13 +328,15 @@ export async function createAdminQuotation(input: CreateAdminQuotationInput): Pr
   }));
   const subtotal = Number(items.reduce((total, item) => total + item.amount, 0).toFixed(2));
   const gstAmount = Number((subtotal * (input.gstRate / 100)).toFixed(2));
+  const transport = resolveTransport(input.transportMode, input.transportCharge);
   return createQuotation({
     customer: input.customer,
     items,
     subtotal,
     gstRate: input.gstRate,
     gstAmount,
-    total: Number((subtotal + gstAmount).toFixed(2)),
+    total: Number((subtotal + gstAmount + transport.charge).toFixed(2)),
+    transport: transport.label,
     source: input.enquiryId ? "enquiry_converted" : "admin_created",
     // The Admin action has created an actual quotation. It becomes "sent"
     // only after the customer email provider confirms delivery.
@@ -529,8 +537,8 @@ export async function createAdminQuotationRevision(id: string, input: CreateQuot
     if (!source) return null;
     const rootId = source.parentQuotationId || source.id;
     const family = store.quotations.filter((quotation) => quotation.id === rootId || quotation.parentQuotationId === rootId);
-    const identity = revisionNumberAndQuoteNumber(source, family); const items = revisedLineItems(input.items); const subtotal = Number(items.reduce((total, item) => total + item.amount, 0).toFixed(2)); const gstAmount = Number((subtotal * (input.gstRate / 100)).toFixed(2));
-    const quotation: QuotationRecord = { ...source, id: randomUUID(), quoteNumber: identity.quoteNumber, accessToken: randomUUID().replaceAll("-", ""), customer: input.customer, items, subtotal, gstRate: input.gstRate, gstAmount, total: Number((subtotal + gstAmount).toFixed(2)), validUntil: input.validUntil || validityDate(createdAt, source.validityDays), internalNotes: input.internalNotes || source.internalNotes, source: "admin_created", revisionNumber: identity.revisionNumber, parentQuotationId: rootId, status: "revised", createdAt };
+    const identity = revisionNumberAndQuoteNumber(source, family); const items = revisedLineItems(input.items); const subtotal = Number(items.reduce((total, item) => total + item.amount, 0).toFixed(2)); const gstAmount = Number((subtotal * (input.gstRate / 100)).toFixed(2)); const transport = input.transportMode ? resolveTransport(input.transportMode, input.transportCharge) : parseStoredTransport(source.transport);
+    const quotation: QuotationRecord = { ...source, id: randomUUID(), quoteNumber: identity.quoteNumber, accessToken: randomUUID().replaceAll("-", ""), customer: input.customer, items, subtotal, gstRate: input.gstRate, gstAmount, total: Number((subtotal + gstAmount + transport.charge).toFixed(2)), transport: transport.label, validUntil: input.validUntil || validityDate(createdAt, source.validityDays), internalNotes: input.internalNotes || source.internalNotes, source: "admin_created", revisionNumber: identity.revisionNumber, parentQuotationId: rootId, status: "revised", createdAt };
     store.quotations.unshift(quotation);
     store.quotationNotes.unshift({ id: randomUUID(), quotationId: quotation.id, note: `Revision ${identity.revisionNumber} created: ${input.reason}`, createdAt });
     store.quotationNotes.unshift({ id: randomUUID(), quotationId: source.id, note: `Revision ${identity.revisionNumber} created as ${identity.quoteNumber}: ${input.reason}`, createdAt });
@@ -546,8 +554,8 @@ export async function createAdminQuotationRevision(id: string, input: CreateQuot
   const { data: familyRows, error: familyError } = await client.from("quotations").select("id, quote_number, revision_number, parent_quotation_id").or(`id.eq.${rootId},parent_quotation_id.eq.${rootId}`);
   if (familyError) throw new Error("Could not prepare the quotation revision.");
   const family = (familyRows || []).map((row) => ({ ...source, id: String(row.id), quoteNumber: String(row.quote_number), revisionNumber: Number(row.revision_number || 0), parentQuotationId: row.parent_quotation_id ? String(row.parent_quotation_id) : undefined }));
-  const identity = revisionNumberAndQuoteNumber(source, family); const items = revisedLineItems(input.items); const subtotal = Number(items.reduce((total, item) => total + item.amount, 0).toFixed(2)); const gstAmount = Number((subtotal * (input.gstRate / 100)).toFixed(2)); const validUntil = input.validUntil || source.validUntil || validityDate(createdAt, source.validityDays);
-  const { data: revisionRow, error: insertError } = await client.from("quotations").insert({ quote_number: identity.quoteNumber, access_token: randomUUID().replaceAll("-", ""), customer: input.customer, customer_id: source.customerId || null, project_id: source.projectId || null, enquiry_id: source.enquiryId || null, subtotal, gst_rate: input.gstRate, gst_amount: gstAmount, total: Number((subtotal + gstAmount).toFixed(2)), transport: source.transport, payment_terms: source.paymentTerms, validity_days: source.validityDays, valid_until: validUntil, source: "admin_created", revision_number: identity.revisionNumber, parent_quotation_id: rootId, status: "revised", is_provisional: true, internal_notes: input.internalNotes || source.internalNotes || null }).select("*").single();
+  const identity = revisionNumberAndQuoteNumber(source, family); const items = revisedLineItems(input.items); const subtotal = Number(items.reduce((total, item) => total + item.amount, 0).toFixed(2)); const gstAmount = Number((subtotal * (input.gstRate / 100)).toFixed(2)); const transport = input.transportMode ? resolveTransport(input.transportMode, input.transportCharge) : parseStoredTransport(source.transport); const validUntil = input.validUntil || source.validUntil || validityDate(createdAt, source.validityDays);
+  const { data: revisionRow, error: insertError } = await client.from("quotations").insert({ quote_number: identity.quoteNumber, access_token: randomUUID().replaceAll("-", ""), customer: input.customer, customer_id: source.customerId || null, project_id: source.projectId || null, enquiry_id: source.enquiryId || null, subtotal, gst_rate: input.gstRate, gst_amount: gstAmount, total: Number((subtotal + gstAmount + transport.charge).toFixed(2)), transport: transport.label, payment_terms: source.paymentTerms, validity_days: source.validityDays, valid_until: validUntil, source: "admin_created", revision_number: identity.revisionNumber, parent_quotation_id: rootId, status: "revised", is_provisional: true, internal_notes: input.internalNotes || source.internalNotes || null }).select("*").single();
   if (insertError || !revisionRow) throw new Error("Could not create the revised quotation.");
   await persistQuotationItems(client, revisionRow.id, items);
   await client.from("quotation_notes").insert([{ quotation_id: revisionRow.id, note: `Revision ${identity.revisionNumber} created: ${input.reason}` }, { quotation_id: source.id, note: `Revision ${identity.revisionNumber} created as ${identity.quoteNumber}: ${input.reason}` }]);

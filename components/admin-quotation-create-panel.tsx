@@ -126,6 +126,8 @@ export default function AdminQuotationCreatePanel() {
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
   const [gstRate, setGstRate] = useState(18);
+  const [transportMode, setTransportMode] = useState<"at_actual" | "fixed">("at_actual");
+  const [transportCharge, setTransportCharge] = useState("");
   const enquiryId = searchParams.get("enquiry");
   const customerId = searchParams.get("customer");
   const [enquiry, setEnquiry] = useState<EnquiryRecord | null>(null);
@@ -310,6 +312,9 @@ export default function AdminQuotationCreatePanel() {
   const configuredLines = rowCalculations.flatMap((entry) => entry.line ? [entry.line] : []);
   const subtotal = configuredLines.reduce((total, line) => total + line.amount, 0) + customBuiltUpSubtotal;
   const gstAmount = Number((subtotal * (gstRate / 100)).toFixed(2));
+  const enteredTransportCharge = Number(transportCharge);
+  const transportChargeAmount = transportMode === "fixed" && Number.isFinite(enteredTransportCharge) ? normalizeRate(Math.max(0, enteredTransportCharge)) : 0;
+  const quotationTotal = Number((subtotal + gstAmount + transportChargeAmount).toFixed(2));
 
   const addSelectedConfigurations = () => {
     setError(""); setMessage("");
@@ -448,6 +453,8 @@ export default function AdminQuotationCreatePanel() {
       }] : []),
       customBuiltUpItems: customBuiltUpItems.map(({ id: _id, ...item }) => item),
       gstRate,
+      transportMode,
+      ...(transportMode === "fixed" && transportCharge.trim() !== "" ? { transportCharge: enteredTransportCharge } : {}),
       enquiryId: enquiryId || undefined,
       validUntil: String(form.get("validUntil") || ""),
       internalNotes: String(form.get("internalNotes") || ""),
@@ -558,7 +565,7 @@ export default function AdminQuotationCreatePanel() {
           })}</div>
         </> : <p className="admin-selected-configurations-empty">No product configurations yet. Use <strong>Multiple selection</strong> above to select thicknesses and add your first quotation line.</p>}
       </section>
-      <div className="admin-customer-fields-grid admin-manual-commercial-details"><label>GST rate (%)<input type="number" min="0" max="100" step="0.01" value={gstRate} onChange={(event) => setGstRate(Number(event.target.value))} /></label><label>Internal notes<textarea name="internalNotes" placeholder="Optional private commercial note" /></label></div><div className="admin-revision-total"><span>Subtotal <b>{currency.format(subtotal)}</b></span><span>GST <b>{currency.format(gstAmount)}</b></span><strong>Quotation total <b>{currency.format(subtotal + gstAmount)}</b></strong></div>{error && <p className="admin-form-error">{error}</p>}{message && <p className="admin-records-message">{message}</p>}<div className="admin-customer-form-actions"><button type="button" className="admin-drawer-secondary" onClick={() => router.push("/admin/quotations")}>Cancel</button><button className="admin-os-primary" disabled={busy || customerLoading || registeredCustomersLoading || (customerMode === "registered" && !registeredCustomerSelected)}>{busy ? "Creating..." : "Generate quotation"}<ArrowRight size={16} /></button></div>
+      <div className="admin-customer-fields-grid admin-manual-commercial-details"><label>GST rate (%)<input type="number" min="0" max="100" step="0.01" value={gstRate} onChange={(event) => setGstRate(Number(event.target.value))} /></label><label>Transportation<select value={transportMode} onChange={(event) => setTransportMode(event.target.value as "at_actual" | "fixed")}><option value="at_actual">At Actual</option><option value="fixed">Fixed charge</option></select></label>{transportMode === "fixed" && <label>Transportation charge<input required type="number" min="0" step="0.01" inputMode="decimal" value={transportCharge} onChange={(event) => setTransportCharge(event.target.value)} placeholder="0.00" /></label>}<label>Internal notes<textarea name="internalNotes" placeholder="Optional private commercial note" /></label></div><div className="admin-revision-total"><span>Subtotal <b>{currency.format(subtotal)}</b></span><span>GST <b>{currency.format(gstAmount)}</b></span><span>Transportation <b>{transportMode === "fixed" ? currency.format(transportChargeAmount) : "At Actual"}</b></span><strong>Quotation total <b>{currency.format(quotationTotal)}</b></strong></div>{error && <p className="admin-form-error">{error}</p>}{message && <p className="admin-records-message">{message}</p>}<div className="admin-customer-form-actions"><button type="button" className="admin-drawer-secondary" onClick={() => router.push("/admin/quotations")}>Cancel</button><button className="admin-os-primary" disabled={busy || customerLoading || registeredCustomersLoading || (customerMode === "registered" && !registeredCustomerSelected)}>{busy ? "Creating..." : "Generate quotation"}<ArrowRight size={16} /></button></div>
     </form>
   </div>;
 }

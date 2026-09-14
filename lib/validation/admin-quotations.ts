@@ -48,15 +48,25 @@ const adminBuiltUpNbrSelectionSchema = builtUpNbrSelectionSchema.extend({
   }
 });
 
+const transportFields = {
+  transportMode: z.enum(["at_actual", "fixed"]).default("at_actual"),
+  transportCharge: z.coerce.number().finite().min(0).max(100000000).transform(normalizeRate).optional(),
+};
+
+function hasRequiredTransportCharge(value: { transportMode: "at_actual" | "fixed"; transportCharge?: number }) {
+  return value.transportMode !== "fixed" || value.transportCharge !== undefined;
+}
+
 export const adminQuotationRevisionSchema = z.object({
   customer: quotationCustomerSchema,
   items: z.array(revisionItemSchema).max(100).default([]),
   customBuiltUpItems: z.array(adminBuiltUpNbrSelectionSchema).max(25).default([]),
   gstRate: z.coerce.number().finite().min(0).max(100),
+  ...transportFields,
   validUntil: z.string().date().or(z.literal("")).optional(),
   internalNotes: z.string().trim().max(5000).optional(),
   reason: z.string().trim().min(3, "Enter a reason for this revision.").max(1000),
-}).refine((value) => value.items.length + value.customBuiltUpItems.length > 0, { message: "Keep at least one quotation line." });
+}).refine((value) => value.items.length + value.customBuiltUpItems.length > 0, { message: "Keep at least one quotation line." }).refine(hasRequiredTransportCharge, { path: ["transportCharge"], message: "Enter the transportation charge." });
 
 export const adminQuotationCreateSchema = z.object({
   /** A Customer Record selected from Customer Record & Analysis. */
@@ -65,7 +75,8 @@ export const adminQuotationCreateSchema = z.object({
   items: z.array(adminStandardQuotationItemSchema).max(100).default([]),
   customBuiltUpItems: z.array(adminBuiltUpNbrSelectionSchema).max(25).default([]),
   gstRate: z.coerce.number().finite().min(0).max(100),
+  ...transportFields,
   enquiryId: z.string().uuid().optional(),
   validUntil: z.string().date().or(z.literal("")).optional(),
   internalNotes: z.string().trim().max(5000).optional(),
-}).refine((value) => value.items.length + value.customBuiltUpItems.length > 0, { message: "Keep at least one quotation line." });
+}).refine((value) => value.items.length + value.customBuiltUpItems.length > 0, { message: "Keep at least one quotation line." }).refine(hasRequiredTransportCharge, { path: ["transportCharge"], message: "Enter the transportation charge." });

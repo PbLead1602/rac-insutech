@@ -404,7 +404,7 @@ export type QuotationRecord = {
   gstRate: number;
   gstAmount: number;
   total: number;
-  transport: "At Actual";
+  transport: string;
   paymentTerms: string;
   validityDays: number;
   status: QuotationStatus;

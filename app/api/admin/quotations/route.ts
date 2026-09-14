@@ -72,6 +72,8 @@ export async function POST(request: Request) {
       customer,
       items,
       gstRate: parsed.data.gstRate,
+      transportMode: parsed.data.transportMode,
+      transportCharge: parsed.data.transportCharge,
       enquiryId: parsed.data.enquiryId,
       validUntil: parsed.data.validUntil || undefined,
       internalNotes: parsed.data.internalNotes,
