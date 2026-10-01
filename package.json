@@ -11,6 +11,8 @@
     "test:built-up-nbr": "tsx scripts/test-built-up-nbr.ts",
     "test:rate-import-reconciliation": "tsx scripts/test-rate-import-reconciliation.ts",
     "test:quotation-status": "tsx scripts/test-quotation-status.ts",
+    "test:rfq-spam-protection": "tsx scripts/test-rfq-spam-protection.ts",
+    "generate:workflow-reference": "node scripts/generate-workflow-reference-docx.mjs",
     "generate:pdf-logo": "node scripts/generate-pdf-logo.mjs",
     "verify:pdf-logo": "node scripts/verify-pdf-logo.mjs",
     "verify:pdf-security": "node scripts/verify-pdf-security.mjs",
@@ -51,7 +53,7 @@
     "postcss": "^8.5.26",
     "supabase": "^2.116.0",
     "tailwindcss": "^4.3.3",
-    "tsx": "^4.21.0",
+    "tsx": "^4.23.15",
     "typescript": "^6.0.3",
     "vite": "^8.2.2",
     "wrangler": "^4.127.1"

@@ -3,6 +3,7 @@ import { createEnquiry, updateAdminEnquiry } from "@/lib/repositories/enquiries"
 import { createEnquiryContinuation } from "@/lib/repositories/customer-accounts";
 import { findOrCreateProjectForQuotation } from "@/lib/repositories/projects";
 import { sendRfqNotifications } from "@/lib/services/brevo";
+import { verifyTurnstile } from "@/lib/services/turnstile";
 import { rfqSchema } from "@/lib/validation/rfq";
 import { getCustomerRequestContext } from "@/lib/auth/customer-server";
 
@@ -33,6 +34,14 @@ export async function POST(request: Request) {
         { ok: false, message: payload.error.issues[0]?.message || "Please check the form fields." },
         { status: 400 },
       );
+    }
+
+    const verification = await verifyTurnstile(
+      payload.data.turnstileToken,
+      request.headers.get("cf-connecting-ip") || request.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
+    );
+    if (!verification.ok) {
+      return NextResponse.json({ ok: false, message: verification.reason }, { status: 400 });
     }
 
     // Enquiries are intentionally open to every visitor. Email confirmation
