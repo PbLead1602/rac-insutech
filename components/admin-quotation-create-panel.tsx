@@ -268,7 +268,9 @@ export default function AdminQuotationCreatePanel() {
 
   useEffect(() => {
     if (!configuredVariantIds.length) return;
-    const timer = window.setTimeout(() => { void loadApprovedRates(configuredVariantIds); }, 0);
+    // Coalesce the cascade of selection updates into one governed lookup.
+    // This changes neither the selected configuration nor final pricing.
+    const timer = window.setTimeout(() => { void loadApprovedRates(configuredVariantIds); }, 350);
     return () => window.clearTimeout(timer);
   }, [configuredVariantKey, configuredVariantIds, loadApprovedRates]);
 

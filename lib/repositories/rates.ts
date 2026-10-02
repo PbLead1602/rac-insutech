@@ -42,6 +42,10 @@ type RateCardHistoryInput = {
 };
 export class RateCardConflictError extends Error {}
 
+// Preview and server-side pricing only need these commercial identity fields.
+// Avoid serialising unrelated import and audit payload for every live lookup.
+const activeRateCardLookupColumns = "id,product_slug,material_class,thickness,size_label,lamination,order_unit,rate,rate_unit,roll_area_m2,pack_running_metres,active,valid_from,valid_to,created_at";
+
 function toRateCard(row: Record<string, unknown>): QuotationRateCardRecord { return { id: String(row.id), productSlug: String(row.product_slug || ""), materialClass: String(row.material_class || ""), thickness: String(row.thickness || ""), sizeLabel: String(row.size_label || ""), lamination: String(row.lamination || ""), orderUnit: row.order_unit as QuotationRateCardRecord["orderUnit"], rate: Number(row.rate || 0), rateUnit: String(row.rate_unit || ""), rollAreaM2: row.roll_area_m2 ? Number(row.roll_area_m2) : undefined, packRunningMetres: row.pack_running_metres ? Number(row.pack_running_metres) : undefined, packingLabel: row.packing_label ? String(row.packing_label) : undefined, moq: row.moq ? Number(row.moq) : undefined, gstRate: Number(row.gst_rate || 18), active: Boolean(row.active), validFrom: row.valid_from ? String(row.valid_from) : undefined, validTo: row.valid_to ? String(row.valid_to) : undefined, reason: row.reason ? String(row.reason) : undefined, publishedAt: row.published_at ? String(row.published_at) : undefined, archivedAt: row.archived_at ? String(row.archived_at) : undefined, createdAt: String(row.created_at) }; }
 
 function decorate(card: QuotationRateCardRecord): QuotationRateCardRecord { const source = quotationVariants.find((variant) => variant.productId === card.productSlug); return { ...card, productName: card.productName || source?.productName || card.productSlug }; }
@@ -107,7 +111,7 @@ export async function getActiveRateCardsForVariants(variants: readonly QuoteVari
     if (!client) throw new Error("Supabase service client is unavailable.");
     const productSlugs = [...new Set(variants.map((variant) => variant.productId))];
     if (!productSlugs.length) return new Map();
-    const { data, error } = await client.from("quotation_rate_cards").select("*").eq("active", true).in("product_slug", productSlugs).limit(5000);
+    const { data, error } = await client.from("quotation_rate_cards").select(activeRateCardLookupColumns).eq("active", true).in("product_slug", productSlugs).limit(5000);
     if (error) throw new Error("Could not load the active quotation Rate Cards.");
     cards = (data || []).map((row) => decorate(toRateCard(row as Record<string, unknown>)));
   }

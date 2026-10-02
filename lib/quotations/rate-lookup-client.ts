@@ -34,9 +34,14 @@ class RateLookupError extends Error {
   }
 }
 
-const attempts = 3;
-const requestTimeoutMs = 10_000;
-const retryDelaysMs = [300, 900];
+// A failed edge request used to be retried three times by every component
+// instance. When a Worker is already at its CPU limit, those overlapping
+// retries amplify the outage. Keep one short retry for transient failures and
+// make identical in-flight requests share the same network operation.
+const attempts = 2;
+const requestTimeoutMs = 7_000;
+const retryDelaysMs = [500];
+const inFlightLookups = new Map<string, Promise<RateLookupResponse & { ok: true; rates: RateLookupResult[] }>>();
 
 function wait(milliseconds: number) {
   return new Promise<void>((resolve) => window.setTimeout(resolve, milliseconds));
@@ -57,7 +62,11 @@ function failureForResponse(response: Response, result: RateLookupResponse | nul
  * parse an HTML edge error as JSON.  Reads are idempotent, so short retries are
  * safe and improve recovery from an intermittent Worker/Supabase response.
  */
-export async function fetchApprovedRateLookup({ request, endpoint, variantIds, expiredSessionMessage }: RateLookupOptions): Promise<RateLookupResponse & { ok: true; rates: RateLookupResult[] }> {
+function lookupKey(endpoint: string, variantIds: readonly string[]) {
+  return `${endpoint}:${[...new Set(variantIds)].sort().join("|")}`;
+}
+
+async function performRateLookup({ request, endpoint, variantIds, expiredSessionMessage }: RateLookupOptions): Promise<RateLookupResponse & { ok: true; rates: RateLookupResult[] }> {
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -104,4 +113,24 @@ export async function fetchApprovedRateLookup({ request, endpoint, variantIds, e
   }
 
   throw lastError || new Error("Could not load the active Rate Card values.");
+}
+
+/**
+ * Resolve a governed rate once per exact configuration set. The result is
+ * intentionally not cached after completion: a later interaction and final
+ * quotation submission still re-read the approved active Rate Card.
+ */
+export async function fetchApprovedRateLookup(options: RateLookupOptions): Promise<RateLookupResponse & { ok: true; rates: RateLookupResult[] }> {
+  const variantIds = [...new Set(options.variantIds)];
+  const key = lookupKey(options.endpoint, variantIds);
+  const existing = inFlightLookups.get(key);
+  if (existing) return existing;
+
+  const lookup = performRateLookup({ ...options, variantIds });
+  inFlightLookups.set(key, lookup);
+  try {
+    return await lookup;
+  } finally {
+    if (inFlightLookups.get(key) === lookup) inFlightLookups.delete(key);
+  }
 }

@@ -9,6 +9,7 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit --project tsconfig.typecheck.json",
     "test:built-up-nbr": "tsx scripts/test-built-up-nbr.ts",
+    "test:rate-lookup-client": "tsx scripts/test-rate-lookup-client.ts",
     "test:rate-import-reconciliation": "tsx scripts/test-rate-import-reconciliation.ts",
     "test:quotation-status": "tsx scripts/test-quotation-status.ts",
     "test:rfq-spam-protection": "tsx scripts/test-rfq-spam-protection.ts",
