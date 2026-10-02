@@ -61,7 +61,7 @@ export async function POST(request: Request) {
       if (card.orderUnit !== variant.orderUnit) return { variantId, available: false, message: "The approved Rate Card has an incompatible pricing unit." };
       return { variantId, rate: normalizeRate(card.rate), rateUnit: card.rateUnit, available: true };
     });
-    return NextResponse.json({ ok: true, rates }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ok: true, rates }, { headers: { "Cache-Control": "no-store", "Vary": "Authorization" } });
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not load active Rate Card values." }, { status: 500 });
   }

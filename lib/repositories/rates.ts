@@ -105,7 +105,9 @@ export async function getActiveRateCardsForVariants(variants: readonly QuoteVari
   } else {
     const client = getSupabaseServiceClient();
     if (!client) throw new Error("Supabase service client is unavailable.");
-    const { data, error } = await client.from("quotation_rate_cards").select("*").eq("active", true).limit(5000);
+    const productSlugs = [...new Set(variants.map((variant) => variant.productId))];
+    if (!productSlugs.length) return new Map();
+    const { data, error } = await client.from("quotation_rate_cards").select("*").eq("active", true).in("product_slug", productSlugs).limit(5000);
     if (error) throw new Error("Could not load the active quotation Rate Cards.");
     cards = (data || []).map((row) => decorate(toRateCard(row as Record<string, unknown>)));
   }

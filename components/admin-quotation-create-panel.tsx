@@ -8,6 +8,7 @@ import { BuiltUpNbrConfigurator, type CustomBuiltUpNbrDraft } from "@/components
 import type { CustomerRecord, EnquiryRecord, QuotationRecord } from "@/lib/db/types";
 import { calculateQuoteLine, defaultQuoteOrderUnit, findQuoteVariant, getQuotationVariant, quotationProducts, quoteOptions, type CalculatedQuoteLine, type QuoteOrderUnit, type QuoteProductId, type QuoteVariant } from "@/lib/quotations/catalogue";
 import { calculateBuiltUpCylinderInsulation, thicknessMmFromRateCardLabel } from "@/lib/quotations/built-up-nbr";
+import { fetchApprovedRateLookup, type RateLookupResult } from "@/lib/quotations/rate-lookup-client";
 import { calculateQuotationTotals } from "@/lib/quotations/transport";
 import { formatRateInput, normalizeRate } from "@/lib/rates/rate-precision";
 
@@ -18,50 +19,8 @@ type RowCalculation = { row: ConfigurationRow; variant?: QuoteVariant; line?: Ca
 type AdminCustomBuiltUpDraft = CustomBuiltUpNbrDraft & { overrideAmount?: number; overrideReason?: string };
 type CustomerRecipientMode = "registered" | "new";
 type ApprovedRate = Pick<QuoteVariant, "rate" | "rateUnit">;
-type RateLookupResult = { variantId: string; available: boolean; rate?: number; rateUnit?: string; message?: string };
-type RateLookupResponse = { ok?: boolean; message?: string; rates?: RateLookupResult[] };
 
 const currency = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-/**
- * The quotation preview must never surface a browser JSON parser error to an
- * Admin. Network intermediaries can return an HTML error document before a
- * Route Handler runs; read the body safely so the UI shows a recoverable,
- * actionable message instead.
- */
-async function readRateLookupResponse(response: Response): Promise<RateLookupResponse> {
-  const body = await response.text();
-  try {
-    return JSON.parse(body) as RateLookupResponse;
-  } catch {
-    if (response.status === 401 || response.status === 403) {
-      throw new Error("Your Admin session has expired. Sign in again, then refresh the quotation.");
-    }
-    throw new Error("The Rate Card service returned an unexpected response. Refresh the page and try again.");
-  }
-}
-
-/** A rate lookup is read-only, so retry one transient response before showing an error. */
-async function fetchApprovedRateLookup(variantIds: string[]) {
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const response = await adminFetch("/api/admin/rates/audit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      cache: "no-store",
-      body: JSON.stringify({ variantIds }),
-    });
-    try {
-      const result = await readRateLookupResponse(response);
-      if (attempt === 0 && response.status >= 500) continue;
-      return { response, result };
-    } catch (error) {
-      const isExpiredSession = response.status === 401 || response.status === 403;
-      if (attempt === 0 && !isExpiredSession) continue;
-      throw error;
-    }
-  }
-  throw new Error("Could not load the active Rate Card values.");
-}
 
 function initialBatchSelection(productId: QuoteProductId): BatchSelection {
   return { productId, materialClass: quoteOptions(productId, "materialClass")[0] || "", thicknesses: [], sizes: [], lamination: "" };
@@ -266,8 +225,12 @@ export default function AdminQuotationCreatePanel() {
     const ids = [...new Set(variantIds)];
     if (!ids.length) return;
     try {
-      const { response, result } = await fetchApprovedRateLookup(ids);
-      if (!response.ok || !result.ok || !result.rates) throw new Error(result.message || "Could not load the active Rate Card values.");
+      const result = await fetchApprovedRateLookup({
+        request: adminFetch,
+        endpoint: "/api/admin/rates/audit",
+        variantIds: ids,
+        expiredSessionMessage: "Your Admin session has expired. Sign in again, then refresh the quotation.",
+      });
       const nextRates: Record<string, ApprovedRate> = {};
       const nextErrors: Record<string, string> = {};
       result.rates.forEach((rate) => {

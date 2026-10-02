@@ -24,13 +24,13 @@ import {
   type QuoteVariant,
 } from "@/lib/quotations/catalogue";
 import { calculateBuiltUpCylinderInsulation, thicknessMmFromRateCardLabel } from "@/lib/quotations/built-up-nbr";
+import { fetchApprovedRateLookup, type RateLookupResult } from "@/lib/quotations/rate-lookup-client";
 
 type Configuration = Pick<QuoteVariant, "materialClass" | "thickness" | "size" | "lamination">;
 type ConfigurationRow = { id: string; productId: QuoteProductId; configuration: Configuration; quantity: string; orderUnit: QuoteOrderUnit };
 type RowCalculation = { row: ConfigurationRow; variant?: QuoteVariant; line?: CalculatedQuoteLine; error?: string };
 type BatchSelection = { productId: QuoteProductId; materialClass: string; thicknesses: string[]; sizes: string[]; lamination: string };
 type ApprovedRate = Pick<QuoteVariant, "rate" | "rateUnit">;
-type RateLookupResult = { variantId: string; rate?: number; rateUnit?: QuoteVariant["rateUnit"]; available: boolean; message?: string };
 type SimilarQuotationResponse = {
   ok?: boolean;
   message?: string;
@@ -223,18 +223,16 @@ function GenerateQuotationWorkspace() {
     const ids = [...new Set(variantIds)];
     if (!ids.length) return;
     try {
-      const response = await customerFetch("/api/quotation-rates", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        cache: "no-store",
-        body: JSON.stringify({ variantIds: ids }),
+      const result = await fetchApprovedRateLookup({
+        request: customerFetch,
+        endpoint: "/api/quotation-rates",
+        variantIds: ids,
+        expiredSessionMessage: "Your customer session has expired. Sign in again, then refresh the quotation.",
       });
-      const result = await response.json() as { ok?: boolean; message?: string; rates?: RateLookupResult[] };
-      if (!response.ok || !result.ok || !result.rates) throw new Error(result.message || "Could not load the active Rate Card values.");
       const nextRates: Record<string, ApprovedRate> = {};
       const nextErrors: Record<string, string> = {};
       result.rates.forEach((rate) => {
-        if (rate.available && rate.rate !== undefined && rate.rateUnit) nextRates[rate.variantId] = { rate: rate.rate, rateUnit: rate.rateUnit };
+        if (rate.available && rate.rate !== undefined && rate.rateUnit) nextRates[rate.variantId] = { rate: rate.rate, rateUnit: rate.rateUnit as QuoteVariant["rateUnit"] };
         else nextErrors[rate.variantId] = rate.message || "No approved active Rate Card is available.";
       });
       setApprovedRates((current) => {

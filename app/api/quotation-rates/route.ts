@@ -17,13 +17,13 @@ const rateLookupSchema = z.object({
  * the customer submits the quotation.
  */
 export async function POST(request: Request) {
-  const customerContext = await getCustomerRequestContext(request);
-  const accessFailure = customerAccessFailure(customerContext);
-  if (accessFailure) return NextResponse.json({ ok: false, message: accessFailure.message }, { status: accessFailure.status });
-  const parsed = rateLookupSchema.safeParse(await request.json());
-  if (!parsed.success) return NextResponse.json({ ok: false, message: "Choose at least one valid product configuration." }, { status: 400 });
-
   try {
+    const customerContext = await getCustomerRequestContext(request);
+    const accessFailure = customerAccessFailure(customerContext);
+    if (accessFailure) return NextResponse.json({ ok: false, message: accessFailure.message }, { status: accessFailure.status });
+    const body = await request.json().catch(() => null);
+    const parsed = rateLookupSchema.safeParse(body);
+    if (!parsed.success) return NextResponse.json({ ok: false, message: "Choose at least one valid product configuration." }, { status: 400 });
     const variantIds = [...new Set(parsed.data.variantIds)];
     const variants = variantIds.flatMap((variantId) => {
       const variant = getQuotationVariant(variantId);
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       if (card.orderUnit !== variant.orderUnit) return { variantId, available: false, message: "The approved Rate Card has an incompatible pricing unit." };
       return { variantId, rate: normalizeRate(card.rate), rateUnit: card.rateUnit, available: true };
     });
-    return NextResponse.json({ ok: true, rates }, { headers: { "Cache-Control": "no-store" } });
+    return NextResponse.json({ ok: true, rates }, { headers: { "Cache-Control": "no-store", "Vary": "Authorization" } });
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not load the active Rate Card values." }, { status: 500 });
   }
