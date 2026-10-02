@@ -13,8 +13,8 @@ const activeRateLookupSchema = z.object({
 
 /** Gives the sole Admin a current completeness check before publishing rates. */
 export async function GET(request: Request) {
-  if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 });
   try {
+    if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 });
     const approvedCards = await getActiveRateCardsForVariants(quotationVariants);
     const products = quotationProducts.map((product) => {
       const variants = quotationVariants.filter((variant) => variant.productId === product.id);
@@ -42,11 +42,11 @@ export async function GET(request: Request) {
  * Admin-only access boundary without exposing commercial cards publicly.
  */
 export async function POST(request: Request) {
-  if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 });
-  const parsed = activeRateLookupSchema.safeParse(await request.json());
-  if (!parsed.success) return NextResponse.json({ ok: false, message: "Choose at least one valid product configuration." }, { status: 400 });
-
   try {
+    if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 });
+    const body = await request.json().catch(() => null);
+    const parsed = activeRateLookupSchema.safeParse(body);
+    if (!parsed.success) return NextResponse.json({ ok: false, message: "Choose at least one valid product configuration." }, { status: 400 });
     const variantIds = [...new Set(parsed.data.variantIds)];
     const variants = variantIds.flatMap((variantId) => {
       const variant = getQuotationVariant(variantId);
