@@ -76,8 +76,8 @@ async function saveRateCardHistory(client: NonNullable<ReturnType<typeof getSupa
   throw new Error("The rate changed, but its audit entry could not be saved.");
 }
 
-function matchesVariant(card: QuotationRateCardRecord, variant: QuoteVariant) {
-  return canonicalRateConfigurationKey(card) === canonicalRateConfigurationKey({
+function rateCardLookupKey(variant: QuoteVariant) {
+  return canonicalRateConfigurationKey({
     productSlug: variant.productId,
     materialClass: variant.materialClass,
     thickness: variant.thickness,
@@ -115,10 +115,17 @@ export async function getActiveRateCardsForVariants(variants: readonly QuoteVari
     if (error) throw new Error("Could not load the active quotation Rate Cards.");
     cards = (data || []).map((row) => decorate(toRateCard(row as Record<string, unknown>)));
   }
-  const activeCards = cards.filter((card) => card.active && (!card.validFrom || card.validFrom <= today) && (!card.validTo || card.validTo >= today));
+  const activeCardsByConfiguration = new Map<string, QuotationRateCardRecord[]>();
+  for (const card of cards) {
+    if (!card.active || (card.validFrom && card.validFrom > today) || (card.validTo && card.validTo < today)) continue;
+    const key = canonicalRateConfigurationKey(card);
+    const matches = activeCardsByConfiguration.get(key);
+    if (matches) matches.push(card);
+    else activeCardsByConfiguration.set(key, [card]);
+  }
   const results = new Map<string, QuotationRateCardRecord>();
   variants.forEach((variant) => {
-    const cardsForVariant = activeCards.filter((candidate) => matchesVariant(candidate, variant));
+    const cardsForVariant = activeCardsByConfiguration.get(rateCardLookupKey(variant)) || [];
     // Never price a quotation against an arbitrary duplicate. The controlled
     // importer flags that situation for Admin resolution instead.
     if (cardsForVariant.length === 1) results.set(variant.id, cardsForVariant[0]);
