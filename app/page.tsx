@@ -475,6 +475,11 @@ function QuoteModal({ initialProduct, onClose }: { initialProduct: string; onClo
       router.push(result.directToQuotationBuilder ? "/generate-quotation" : `/account/continue?intent=${encodeURIComponent(result.continuationToken || "")}`);
     } catch (submissionError) {
       setError(submissionError instanceof Error ? submissionError.message : "We could not save your enquiry.");
+      // Turnstile tokens are single-use. If any downstream submission step
+      // fails, request a fresh token so a visitor can safely retry instead of
+      // receiving a misleading timeout-or-duplicate rejection.
+      setTurnstileToken("");
+      window.dispatchEvent(new Event("rac:turnstile-reset"));
     } finally {
       setBusy(false);
     }

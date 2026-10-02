@@ -52,7 +52,11 @@ export async function createEnquiry(
   const enquiry: EnquiryRecord = {
     ...input,
     id: randomUUID(),
-    enquiryNumber: developmentEnquiryNumber(),
+    // Supabase assigns the production number from its database default.  Do
+    // not touch the filesystem-backed development store in a Worker request:
+    // that made a valid Turnstile token fail after verification for every new
+    // public enquiry in production.
+    enquiryNumber: mode === "mock" ? developmentEnquiryNumber() : "",
     source: "website",
     status: "new",
     createdAt: new Date().toISOString(),
