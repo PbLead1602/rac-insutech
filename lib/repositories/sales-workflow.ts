@@ -71,7 +71,16 @@ export async function finaliseQuotationSalesLinks(quotation: QuotationRecord, li
   const linkedQuotation = await linkQuotationToSales(quotation.id, links);
   if (!linkedQuotation) throw new Error("Could not link the quotation to Sales records.");
   if (links.enquiryId) await linkEnquiryToSales(links.enquiryId, links.customerId, links.projectId, "quoted");
-  return linkedQuotation;
+  // The quotation has already been saved with its immutable line-item
+  // snapshot. Keep that snapshot in the response rather than forcing a
+  // secondary detail read just to reflect the relationship fields.
+  return {
+    ...quotation,
+    customerId: links.customerId,
+    accountId: links.accountId,
+    projectId: links.projectId,
+    enquiryId: links.enquiryId,
+  };
 }
 
 /** Records the actual email event only after Brevo accepts the customer email. */

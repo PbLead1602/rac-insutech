@@ -421,13 +421,27 @@ export async function getAdminQuotation(id: string): Promise<{ quotation: Quotat
   if (mode === "unconfigured") throw new Error("Quotation storage is not configured.");
   const client = getSupabaseServiceClient();
   if (!client) throw new Error("Supabase service client is unavailable.");
-  const [{ data: quotation, error }, { data: items, error: itemError }, { data: notes, error: noteError }] = await Promise.all([
+  const [{ data: quotation, error }, { data: items, error: itemError }] = await Promise.all([
     client.from("quotations").select("*").eq("id", id).maybeSingle(),
     client.from("quotation_items").select("*").eq("quotation_id", id).order("sort_order"),
-    client.from("quotation_notes").select("id, quotation_id, note, created_at").eq("quotation_id", id).order("created_at", { ascending: false }),
   ]);
-  if (error || itemError || noteError) throw new Error("Could not load the quotation.");
+  if (error || itemError) throw new Error("Could not load the quotation.");
   if (!quotation) return null;
+  // Notes are supporting Admin commentary, not part of the immutable
+  // commercial snapshot. A legacy database that is missing the optional
+  // notes table must not block quotation creation, viewing, or delivery.
+  const { data: notes, error: noteError } = await client
+    .from("quotation_notes")
+    .select("id, quotation_id, note, created_at")
+    .eq("quotation_id", id)
+    .order("created_at", { ascending: false });
+  if (noteError) {
+    console.error("Quotation notes could not be loaded", {
+      quotationId: id,
+      code: noteError.code,
+      message: noteError.message,
+    });
+  }
   let currentQuotation = quotationFromRow(quotation as Record<string, unknown>, (items || []) as Record<string, unknown>[]);
   if (quotationShouldExpire(currentQuotation)) {
     const { error: expiryError } = await client.from("quotations").update({ status: "expired" }).eq("id", currentQuotation.id);
@@ -436,7 +450,7 @@ export async function getAdminQuotation(id: string): Promise<{ quotation: Quotat
   }
   return {
     quotation: currentQuotation,
-    notes: (notes || []).map((note) => ({ id: note.id, quotationId: note.quotation_id, note: note.note, createdAt: note.created_at })),
+    notes: noteError ? [] : (notes || []).map((note) => ({ id: note.id, quotationId: note.quotation_id, note: note.note, createdAt: note.created_at })),
   };
 }
 
@@ -516,7 +530,7 @@ export async function linkQuotationToSales(id: string, links: { customerId: stri
   const { data, error } = await client.from("quotations").update({ customer_id: links.customerId, account_id: links.accountId || null, project_id: links.projectId || null, enquiry_id: links.enquiryId || null }).eq("id", id).select("*").maybeSingle();
   if (error) throw new Error("Could not link the quotation to Sales records.");
   if (!data) return null;
-  return (await getAdminQuotation(id))?.quotation || quotationFromRow(data as Record<string, unknown>);
+  return quotationFromRow(data as Record<string, unknown>);
 }
 
 function revisionNumberAndQuoteNumber(source: QuotationRecord, family: QuotationRecord[]) {
