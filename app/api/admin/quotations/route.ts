@@ -32,6 +32,7 @@ export async function POST(request: Request) {
   if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 });
   const parsed = adminQuotationCreateSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message || "Check the quotation details." }, { status: 400 });
+  let stage = "customer resolution";
   try {
     const selectedCustomerDetail = parsed.data.customerId ? await getAdminCustomer(parsed.data.customerId) : null;
     if (parsed.data.customerId && !selectedCustomerDetail) {
@@ -54,12 +55,16 @@ export async function POST(request: Request) {
       customerType: quotationCustomerType(selectedCustomerDetail.customer.customerType),
       notes: selectedCustomerDetail.customer.notes || parsed.data.customer.notes,
     } : parsed.data.customer;
+    stage = "sales link resolution";
     const salesLinks = await resolveSalesLinks(customer, { customerId: selectedCustomerDetail?.customer.id });
     // The browser supplies selections only. Standard lines are always rebuilt
     // from the current active Rate Card immediately before saving.
+    stage = "standard line pricing";
     const standardItems = await Promise.all(parsed.data.items.map((item) => priceAdminStandardQuotationLine(item)));
+    stage = "custom built-up line pricing";
     const customItems = await Promise.all(parsed.data.customBuiltUpItems.map(({ overrideAmount, overrideReason, ...selection }) => priceCustomBuiltUpNbrItem(selection, { overrideAmount, overrideReason })));
     const items = [...standardItems, ...customItems];
+    stage = "enquiry creation";
     const enquiry = parsed.data.enquiryId
       ? undefined
       : await createQuotationEnquiry(customer, salesLinks, {
@@ -68,6 +73,7 @@ export async function POST(request: Request) {
         source: "admin",
       });
     salesLinks.enquiryId = parsed.data.enquiryId || enquiry?.id;
+    stage = "quotation storage";
     const created = await createAdminQuotation({
       customer,
       items,
@@ -79,9 +85,14 @@ export async function POST(request: Request) {
       internalNotes: parsed.data.internalNotes,
       ...salesLinks,
     });
+    stage = "sales-link finalisation";
     const quotation = await finaliseQuotationSalesLinks(created.quotation, salesLinks);
     return NextResponse.json({ ok: true, quotation, notification: { emailDelivered: false, emailMode: "awaiting_admin_confirmation" } }, { status: 201 });
   } catch (error) {
+    console.error("Admin quotation creation failed", {
+      stage,
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not create the quotation." }, { status: 500 });
   }
 }
