@@ -3,6 +3,8 @@ import { getAdminRequestContext } from "@/lib/auth/admin-server";
 import { createAdminQuotationRevision } from "@/lib/repositories/quotations";
 import { adminQuotationRevisionSchema } from "@/lib/validation/admin-quotations";
 import { priceCustomBuiltUpNbrItem } from "@/lib/quotations/built-up-nbr-pricing";
+import { getServerPricedVariants } from "@/lib/quotations/pricing";
+import { getBuiltUpNbrWastagePercent } from "@/lib/repositories/settings";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +13,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const parsed = adminQuotationRevisionSchema.safeParse(await request.json());
   if (!parsed.success) return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message || "Check the revised quotation." }, { status: 400 });
   try {
-    const customItems = await Promise.all(parsed.data.customBuiltUpItems.map(({ overrideAmount, overrideReason, ...selection }) => priceCustomBuiltUpNbrItem(selection, { overrideAmount, overrideReason })));
+    const pricedVariants = await getServerPricedVariants(parsed.data.customBuiltUpItems.flatMap((item) => item.layers.map((layer) => layer.variantId)));
+    const builtUpWastagePercent = parsed.data.customBuiltUpItems.length ? await getBuiltUpNbrWastagePercent() : undefined;
+    const customItems = await Promise.all(parsed.data.customBuiltUpItems.map(({ overrideAmount, overrideReason, ...selection }) => priceCustomBuiltUpNbrItem(
+      selection,
+      { overrideAmount, overrideReason, wastagePercent: builtUpWastagePercent },
+      pricedVariants,
+    )));
     const quotation = await createAdminQuotationRevision((await params).id, {
       customer: parsed.data.customer,
       items: [...parsed.data.items, ...customItems],

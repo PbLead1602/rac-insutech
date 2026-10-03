@@ -4,8 +4,9 @@ import { createAdminQuotation, listAdminQuotations } from "@/lib/repositories/qu
 import { adminQuotationCreateSchema } from "@/lib/validation/admin-quotations";
 import { createQuotationEnquiry, finaliseQuotationSalesLinks, resolveSalesLinks } from "@/lib/repositories/sales-workflow";
 import { priceCustomBuiltUpNbrItem } from "@/lib/quotations/built-up-nbr-pricing";
-import { priceAdminStandardQuotationLine } from "@/lib/quotations/pricing";
+import { getServerPricedVariants, priceAdminStandardQuotationLines } from "@/lib/quotations/pricing";
 import { getAdminCustomer } from "@/lib/repositories/customers";
+import { getBuiltUpNbrWastagePercent } from "@/lib/repositories/settings";
 import type { CustomerType, QuotationCustomer } from "@/lib/db/types";
 
 // Quotation email delivery creates PDF attachments and must use the Node runtime.
@@ -58,11 +59,23 @@ export async function POST(request: Request) {
     stage = "sales link resolution";
     const salesLinks = await resolveSalesLinks(customer, { customerId: selectedCustomerDetail?.customer.id });
     // The browser supplies selections only. Standard lines are always rebuilt
-    // from the current active Rate Card immediately before saving.
+    // from one current active Rate Card snapshot immediately before saving.
+    // Loading each line independently can exceed the Worker subrequest limit
+    // for a legitimate large quotation.
+    stage = "active rate-card snapshot";
+    const pricedVariants = await getServerPricedVariants([
+      ...parsed.data.items.map((item) => item.variantId),
+      ...parsed.data.customBuiltUpItems.flatMap((item) => item.layers.map((layer) => layer.variantId)),
+    ]);
     stage = "standard line pricing";
-    const standardItems = await Promise.all(parsed.data.items.map((item) => priceAdminStandardQuotationLine(item)));
+    const standardItems = await priceAdminStandardQuotationLines(parsed.data.items, pricedVariants);
     stage = "custom built-up line pricing";
-    const customItems = await Promise.all(parsed.data.customBuiltUpItems.map(({ overrideAmount, overrideReason, ...selection }) => priceCustomBuiltUpNbrItem(selection, { overrideAmount, overrideReason })));
+    const builtUpWastagePercent = parsed.data.customBuiltUpItems.length ? await getBuiltUpNbrWastagePercent() : undefined;
+    const customItems = await Promise.all(parsed.data.customBuiltUpItems.map(({ overrideAmount, overrideReason, ...selection }) => priceCustomBuiltUpNbrItem(
+      selection,
+      { overrideAmount, overrideReason, wastagePercent: builtUpWastagePercent },
+      pricedVariants,
+    )));
     const items = [...standardItems, ...customItems];
     stage = "enquiry creation";
     const enquiry = parsed.data.enquiryId

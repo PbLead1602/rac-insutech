@@ -3,19 +3,24 @@ import "server-only";
 import type { CustomBuiltUpNbrSnapshot, QuotationLineRecord } from "@/lib/db/types";
 import { calculateBuiltUpCylinderInsulation, CUSTOM_BUILT_UP_NBR_ITEM_TYPE, thicknessMmFromRateCardLabel, type BuiltUpNbrSelection } from "@/lib/quotations/built-up-nbr";
 import { getServerPricedVariant } from "@/lib/quotations/pricing";
+import type { QuoteVariant } from "@/lib/quotations/catalogue";
 import { getBuiltUpNbrWastagePercent } from "@/lib/repositories/settings";
 
 /**
  * Performs the authoritative custom NBR calculation. No browser-supplied
  * area, rate, amount, thickness or lamination is accepted as commercial data.
  */
-export async function priceCustomBuiltUpNbrItem(selection: BuiltUpNbrSelection, options: { wastagePercent?: number; overrideAmount?: number; overrideReason?: string } = {}): Promise<QuotationLineRecord> {
+export async function priceCustomBuiltUpNbrItem(
+  selection: BuiltUpNbrSelection,
+  options: { wastagePercent?: number; overrideAmount?: number; overrideReason?: string } = {},
+  pricedVariants?: ReadonlyMap<string, QuoteVariant>,
+): Promise<QuotationLineRecord> {
   const materialClass = selection.materialClass.trim();
   if (!materialClass) throw new Error("Choose a material class for Custom Diameter / Built-Up NBR.");
   const wastagePercent = options.wastagePercent ?? await getBuiltUpNbrWastagePercent();
 
   const variants = await Promise.all(selection.layers.map(async ({ variantId }) => {
-    const variant = await getServerPricedVariant(variantId);
+    const variant = pricedVariants?.get(variantId) ?? await getServerPricedVariant(variantId);
     if (!variant) throw new Error("A selected NBR Sheet layer is no longer available.");
     if (variant.productId !== "nitrile-rubber-sheet") throw new Error("Custom built-up insulation must use an active Nitrile Rubber Sheet Rate Card.");
     if (variant.orderUnit !== "roll" || variant.rateUnit !== "square metre") throw new Error("The selected NBR Sheet Rate Card has an incompatible pricing unit.");

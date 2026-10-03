@@ -3,7 +3,7 @@ import "server-only";
 import { integrationMode } from "@/lib/env";
 import { serverEnv } from "@/lib/env/server";
 import { calculateQuoteLine, getQuotationVariant, type CalculatedQuoteLine, type QuoteOrderUnit, type QuoteVariant } from "@/lib/quotations/catalogue";
-import { getActiveRateCardForVariant } from "@/lib/repositories/rates";
+import { getActiveRateCardsForVariants } from "@/lib/repositories/rates";
 import { normalizeRate } from "@/lib/rates/rate-precision";
 
 /**
@@ -14,18 +14,44 @@ import { normalizeRate } from "@/lib/rates/rate-precision";
 export async function getServerPricedVariant(variantId: string): Promise<QuoteVariant | undefined> {
   const developmentVariant = getQuotationVariant(variantId);
   if (!developmentVariant) return undefined;
+  return (await getServerPricedVariants([variantId])).get(variantId);
+}
+
+/**
+ * Resolves every configuration required by one quotation from one governed
+ * Rate Card snapshot. This preserves the same per-variant validation while
+ * avoiding one database request per line in large quotations.
+ */
+export async function getServerPricedVariants(variantIds: readonly string[]): Promise<Map<string, QuoteVariant>> {
+  const developmentVariants = [...new Map(
+    variantIds
+      .map((variantId) => getQuotationVariant(variantId))
+      .filter((variant): variant is QuoteVariant => Boolean(variant))
+      .map((variant) => [variant.id, variant]),
+  ).values()];
+  const results = new Map<string, QuoteVariant>();
+  if (!developmentVariants.length) return results;
+
   const mode = integrationMode(serverEnv.supabaseServiceConfigured);
-  if (mode === "unconfigured") return developmentVariant;
-  const card = await getActiveRateCardForVariant(developmentVariant);
-  if (!card) throw new Error("This product configuration does not have an approved active rate.");
-  if (card.orderUnit !== developmentVariant.orderUnit) throw new Error("The approved rate card has an incompatible pricing unit.");
-  return {
-    ...developmentVariant,
-    rate: normalizeRate(Number(card.rate)),
-    rateUnit: card.rateUnit as QuoteVariant["rateUnit"],
-    rollAreaM2: card.rollAreaM2,
-    packRunningMetres: card.packRunningMetres,
-  };
+  if (mode === "unconfigured") {
+    developmentVariants.forEach((variant) => results.set(variant.id, variant));
+    return results;
+  }
+
+  const cards = await getActiveRateCardsForVariants(developmentVariants);
+  for (const developmentVariant of developmentVariants) {
+    const card = cards.get(developmentVariant.id);
+    if (!card) throw new Error("This product configuration does not have an approved active rate.");
+    if (card.orderUnit !== developmentVariant.orderUnit) throw new Error("The approved rate card has an incompatible pricing unit.");
+    results.set(developmentVariant.id, {
+      ...developmentVariant,
+      rate: normalizeRate(Number(card.rate)),
+      rateUnit: card.rateUnit as QuoteVariant["rateUnit"],
+      rollAreaM2: card.rollAreaM2,
+      packRunningMetres: card.packRunningMetres,
+    });
+  }
+  return results;
 }
 
 /**
@@ -39,8 +65,8 @@ export async function priceAdminStandardQuotationLine(input: {
   quantity: number;
   orderUnit: QuoteOrderUnit;
   rateOverride?: number;
-}): Promise<CalculatedQuoteLine> {
-  const variant = await getServerPricedVariant(input.variantId);
+}, pricedVariants?: ReadonlyMap<string, QuoteVariant>): Promise<CalculatedQuoteLine> {
+  const variant = pricedVariants?.get(input.variantId) ?? await getServerPricedVariant(input.variantId);
   if (!variant) throw new Error("One selected product configuration is no longer available. Please configure it again.");
 
   const calculated = calculateQuoteLine(variant, input.quantity, input.orderUnit);
@@ -51,4 +77,15 @@ export async function priceAdminStandardQuotationLine(input: {
     rate: normalizeRate(input.rateOverride),
     amount: Number((calculated.suppliedQuantity * normalizeRate(input.rateOverride)).toFixed(2)),
   };
+}
+
+/** Prices an Admin quotation's standard lines from one active-rate snapshot. */
+export async function priceAdminStandardQuotationLines(inputs: Array<{
+  variantId: string;
+  quantity: number;
+  orderUnit: QuoteOrderUnit;
+  rateOverride?: number;
+}>, pricedVariants?: ReadonlyMap<string, QuoteVariant>): Promise<CalculatedQuoteLine[]> {
+  const rateSnapshot = pricedVariants ?? await getServerPricedVariants(inputs.map((input) => input.variantId));
+  return Promise.all(inputs.map((input) => priceAdminStandardQuotationLine(input, rateSnapshot)));
 }
