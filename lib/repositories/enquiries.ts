@@ -202,7 +202,15 @@ export async function updateAdminEnquiry(id: string, patch: AdminEnquiryPatch): 
   if (!client) throw new Error("Supabase service client is unavailable.");
   const update = { ...(patch.status ? { status: patch.status } : {}), ...(patch.followUpAt !== undefined ? { follow_up_at: patch.followUpAt || null } : {}), ...(patch.followUpNote !== undefined ? { follow_up_note: patch.followUpNote || null } : {}), ...(patch.internalNotes !== undefined ? { internal_notes: patch.internalNotes || null } : {}), ...(patch.lostReason !== undefined ? { lost_reason: patch.lostReason || null } : {}), ...(patch.customerId !== undefined ? { customer_id: patch.customerId || null } : {}), ...(patch.accountId !== undefined ? { account_id: patch.accountId || null } : {}), ...(patch.projectId !== undefined ? { project_id: patch.projectId || null } : {}), last_activity_at: new Date().toISOString() };
   const { data, error } = await client.from("enquiries").update(update).eq("id", id).select("*").maybeSingle();
-  if (error) throw new Error("Could not update the enquiry.");
+  if (error) {
+    console.error("Enquiry update failed", {
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    });
+    throw new Error("Could not update the enquiry.");
+  }
   return data ? toEnquiryRecord(data as Record<string, unknown>) : null;
 }
 
