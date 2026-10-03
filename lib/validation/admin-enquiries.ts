@@ -14,5 +14,8 @@ export const adminEnquiryPatchSchema = z.object({
 });
 
 export const adminEnquiryNoteSchema = z.object({ note: z.string().trim().min(1, "Enter an internal note.").max(5000) });
+export const adminEnquiryBulkDeleteSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1, "Select at least one enquiry.").max(100, "Select no more than 100 enquiries at once."),
+}).refine(({ ids }) => new Set(ids).size === ids.length, { path: ["ids"], message: "Each enquiry can be selected only once." });
 
 export const adminEnquiryCreateSchema = rfqSchema;

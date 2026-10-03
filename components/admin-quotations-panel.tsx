@@ -136,11 +136,11 @@ export default function AdminQuotationsPanel() {
   const deleteSelected = async () => {
     if (!selectedQuotationIds.length || deleting) return;
     const noun = selectedQuotationIds.length === 1 ? "quotation" : "quotations";
-    if (!window.confirm(`Permanently delete ${selectedQuotationIds.length} ${noun}? This removes the selected quotation data, including lines and internal notes, and cannot be undone. If a quotation has revisions, select its full revision family too.`)) return;
+    if (!window.confirm(`Permanently delete ${selectedQuotationIds.length} ${noun}? This removes the selected quotation data, including lines and internal notes, plus its linked enquiry when present. This cannot be undone. If a quotation has revisions, select its full revision family too.`)) return;
     setDeleting(true); setMessage("");
     try {
       const response = await adminFetch("/api/admin/quotations", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: selectedQuotationIds }) });
-      const data = await response.json() as { deletedIds?: string[]; skippedIds?: string[]; message?: string };
+      const data = await response.json() as { deletedIds?: string[]; deletedEnquiryIds?: string[]; skippedIds?: string[]; message?: string };
       if (!response.ok) { setMessage(data.message || "Could not delete the selected quotations."); return; }
       const deletedIds = data.deletedIds || [];
       const deleted = new Set(deletedIds);
@@ -148,7 +148,8 @@ export default function AdminQuotationsPanel() {
       setSelected((current) => current && deleted.has(current.quotation.id) ? null : current);
       setSelectedForDeletion([]);
       const skippedCount = data.skippedIds?.length || 0;
-      setMessage(`${deletedIds.length} ${deletedIds.length === 1 ? "quotation" : "quotations"} deleted.${skippedCount ? ` ${skippedCount} quotation${skippedCount === 1 ? " was" : "s were"} not deleted because every revision in that family must be selected together.` : ""}`);
+      const deletedEnquiries = data.deletedEnquiryIds?.length || 0;
+      setMessage(`${deletedIds.length} ${deletedIds.length === 1 ? "quotation" : "quotations"} deleted.${deletedEnquiries ? ` ${deletedEnquiries} linked ${deletedEnquiries === 1 ? "enquiry was" : "enquiries were"} also deleted.` : ""}${skippedCount ? ` ${skippedCount} quotation${skippedCount === 1 ? " was" : "s were"} not deleted because every revision in that family must be selected together.` : ""}`);
     } catch {
       setMessage("Could not delete the selected quotations.");
     } finally {

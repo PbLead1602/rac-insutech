@@ -10,6 +10,7 @@ import { calculateQuotationTotals, parseStoredTransport, resolveTransport, type 
 import { nextQuotationStatusForPatch, quotationShouldExpire } from "@/lib/quotations/status";
 import { getSupabaseServiceClient } from "@/lib/supabase/server";
 import { persistentDevelopmentStore } from "@/lib/development/persistent-store";
+import { deleteAdminEnquiries } from "@/lib/repositories/enquiries";
 
 type DevelopmentStore = { quotations: QuotationRecord[]; quotationNotes: QuotationNote[] };
 
@@ -399,9 +400,9 @@ export async function listAdminQuotations(query = ""): Promise<QuotationRecord[]
   return (data || []).map((row) => quotationFromRow(row as Record<string, unknown>));
 }
 
-export type BulkQuotationDeleteResult = { deletedIds: string[]; skippedIds: string[] };
+export type BulkQuotationDeleteResult = { deletedIds: string[]; skippedIds: string[]; deletedEnquiryIds: string[] };
 
-type QuotationDeletionRow = { id: string; parentQuotationId?: string };
+type QuotationDeletionRow = { id: string; parentQuotationId?: string; enquiryId?: string };
 
 /**
  * Builds a child-before-parent deletion order. Quotations deliberately use a
@@ -452,15 +453,18 @@ export async function deleteAdminQuotations(ids: readonly string[]): Promise<Bul
     const store = developmentStore();
     const candidates = store.quotations
       .filter((quotation) => requestedIds.includes(quotation.id))
-      .map((quotation) => ({ id: quotation.id, parentQuotationId: quotation.parentQuotationId }));
+      .map((quotation) => ({ id: quotation.id, parentQuotationId: quotation.parentQuotationId, enquiryId: quotation.enquiryId }));
     const plan = buildQuotationDeletionPlan(requestedIds, candidates, store.quotations.map((quotation) => ({ id: quotation.id, parentQuotationId: quotation.parentQuotationId })));
     const deletedIds = plan.deletionOrder.flat();
     const deleted = new Set(deletedIds);
     store.quotations = store.quotations.filter((quotation) => !deleted.has(quotation.id));
     store.quotationNotes = store.quotationNotes.filter((note) => !deleted.has(note.quotationId));
+    const enquiryIds = [...new Set(candidates.filter((quotation) => deleted.has(quotation.id) && quotation.enquiryId).map((quotation) => quotation.enquiryId!))];
+    const enquiries = enquiryIds.length ? await deleteAdminEnquiries(enquiryIds) : { deletedIds: [] };
     return {
       deletedIds,
       skippedIds: plan.skippedIds,
+      deletedEnquiryIds: enquiries.deletedIds,
     };
   }
   if (mode === "unconfigured") throw new Error("Quotation storage is not configured.");
@@ -469,15 +473,15 @@ export async function deleteAdminQuotations(ids: readonly string[]): Promise<Bul
 
   const { data: candidates, error: candidateError } = await client
     .from("quotations")
-    .select("id, parent_quotation_id")
+    .select("id, parent_quotation_id, enquiry_id")
     .in("id", requestedIds);
   if (candidateError) throw new Error("Could not check the selected quotations.");
-  const selectedRows = (candidates || []).map((row) => ({ id: String(row.id), parentQuotationId: row.parent_quotation_id ? String(row.parent_quotation_id) : undefined }));
-  if (!selectedRows.length) return { deletedIds: [], skippedIds: requestedIds };
+  const selectedRows = (candidates || []).map((row) => ({ id: String(row.id), parentQuotationId: row.parent_quotation_id ? String(row.parent_quotation_id) : undefined, enquiryId: row.enquiry_id ? String(row.enquiry_id) : undefined }));
+  if (!selectedRows.length) return { deletedIds: [], skippedIds: requestedIds, deletedEnquiryIds: [] };
 
   // Load all revision descendants of the selected rows. Normal revisions are
   // one level deep, but the loop also protects legacy nested revisions.
-  const hierarchy = [...selectedRows];
+  const hierarchy: QuotationDeletionRow[] = [...selectedRows];
   let parentsToCheck = selectedRows.map((quotation) => quotation.id);
   const seenIds = new Set(hierarchy.map((quotation) => quotation.id));
   while (parentsToCheck.length) {
@@ -498,7 +502,7 @@ export async function deleteAdminQuotations(ids: readonly string[]): Promise<Bul
   }
 
   const plan = buildQuotationDeletionPlan(requestedIds, selectedRows, hierarchy);
-  if (!plan.deletionOrder.length) return { deletedIds: [], skippedIds: plan.skippedIds };
+  if (!plan.deletionOrder.length) return { deletedIds: [], skippedIds: plan.skippedIds, deletedEnquiryIds: [] };
 
   // Quotation items, notes, events and customer revision requests use
   // database cascades. Delete revision leaves before parents to satisfy the
@@ -514,7 +518,12 @@ export async function deleteAdminQuotations(ids: readonly string[]): Promise<Bul
     deletedIds.push(...(deletedRows || []).map((row) => String(row.id)));
   }
   const deleted = new Set(deletedIds);
-  return { deletedIds, skippedIds: requestedIds.filter((id) => !deleted.has(id)) };
+  // An enquiry converted into a quotation is part of that quotation's
+  // workflow. Once the quotation is permanently deleted, remove its linked
+  // enquiry as requested; database FKs safely unlink any other references.
+  const enquiryIds = [...new Set(selectedRows.filter((quotation) => deleted.has(quotation.id) && quotation.enquiryId).map((quotation) => quotation.enquiryId!))];
+  const enquiries = enquiryIds.length ? await deleteAdminEnquiries(enquiryIds) : { deletedIds: [] };
+  return { deletedIds, skippedIds: requestedIds.filter((id) => !deleted.has(id)), deletedEnquiryIds: enquiries.deletedIds };
 }
 
 /** Returns the full commercial history for a selected customer record. */

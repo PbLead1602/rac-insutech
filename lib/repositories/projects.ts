@@ -13,6 +13,7 @@ function developmentStore(): DevelopmentStore { return persistentDevelopmentStor
 export type ProjectInput = Omit<ProjectRecord, "id" | "slug" | "createdAt">;
 export type ProjectDetail = { project: ProjectRecord; linked: { enquiries: number; quotations: number } };
 export type SaveProjectResult = { project: ProjectRecord; mode: IntegrationMode };
+export type BulkProjectDeleteResult = { deletedIds: string[]; skippedIds: string[] };
 
 function slugify(value: string) { return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 80) || "project"; }
 function toProjectRecord(row: Record<string, unknown>): ProjectRecord { return { id: String(row.id), title: String(row.title || ""), slug: String(row.slug || ""), customerId: row.customer_id ? String(row.customer_id) : undefined, clientName: row.client_name ? String(row.client_name) : undefined, location: row.location ? String(row.location) : undefined, requirement: row.requirement ? String(row.requirement) : undefined, solution: row.solution ? String(row.solution) : undefined, scope: row.scope ? String(row.scope) : undefined, internalNotes: row.internal_notes ? String(row.internal_notes) : undefined, projectStatus: row.project_status as ProjectStatus, startDate: row.start_date ? String(row.start_date) : undefined, expectedDeliveryDate: row.expected_delivery_date ? String(row.expected_delivery_date) : undefined, createdAt: String(row.created_at) }; }
@@ -26,6 +27,26 @@ export async function listAdminProjects(query = ""): Promise<ProjectRecord[]> {
   if (query.trim()) request = request.or(`title.ilike.%${query.trim()}%,client_name.ilike.%${query.trim()}%,location.ilike.%${query.trim()}%,requirement.ilike.%${query.trim()}%`);
   const { data, error } = await request; if (error) throw new Error("Could not load projects.");
   return (data || []).map((row) => toProjectRecord(row as Record<string, unknown>));
+}
+
+/** Permanently removes selected project masters and unlinks dependent sales records. */
+export async function deleteAdminProjects(ids: readonly string[]): Promise<BulkProjectDeleteResult> {
+  const requestedIds = [...new Set(ids)];
+  const mode = integrationMode(serverEnv.supabaseServiceConfigured);
+  if (mode === "mock") {
+    const store = developmentStore();
+    const deleted = new Set(store.projects.filter((project) => requestedIds.includes(project.id)).map((project) => project.id));
+    store.projects = store.projects.filter((project) => !deleted.has(project.id));
+    return { deletedIds: requestedIds.filter((id) => deleted.has(id)), skippedIds: requestedIds.filter((id) => !deleted.has(id)) };
+  }
+  if (mode === "unconfigured") throw new Error("Project storage is not configured.");
+  const client = getSupabaseServiceClient();
+  if (!client) throw new Error("Supabase service client is unavailable.");
+  const { data, error } = await client.from("projects").delete().in("id", requestedIds).select("id");
+  if (error) throw new Error("Could not delete the selected projects.");
+  const deletedIds = (data || []).map((row) => String(row.id));
+  const deleted = new Set(deletedIds);
+  return { deletedIds, skippedIds: requestedIds.filter((id) => !deleted.has(id)) };
 }
 
 /** Returns every project associated with a selected customer record. */

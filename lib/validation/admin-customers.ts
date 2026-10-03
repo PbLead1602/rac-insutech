@@ -23,3 +23,6 @@ const adminCustomerBaseSchema = z.object({
 export const adminCustomerCreateSchema = adminCustomerBaseSchema.refine((value) => value.phone || value.email || value.company, { message: "Add a company, phone number or email address.", path: ["company"] });
 export const adminCustomerPatchSchema = adminCustomerBaseSchema.partial();
 export const adminCustomerNoteSchema = z.object({ note: z.string().trim().min(1, "Enter an internal note.").max(5000) });
+export const adminCustomerBulkDeleteSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1, "Select at least one customer.").max(100, "Select no more than 100 customers at once."),
+}).refine(({ ids }) => new Set(ids).size === ids.length, { path: ["ids"], message: "Each customer can be selected only once." });

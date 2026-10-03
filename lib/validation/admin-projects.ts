@@ -18,3 +18,6 @@ const base = z.object({
 
 export const adminProjectCreateSchema = base;
 export const adminProjectPatchSchema = base.partial();
+export const adminProjectBulkDeleteSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1, "Select at least one project.").max(100, "Select no more than 100 projects at once."),
+}).refine(({ ids }) => new Set(ids).size === ids.length, { path: ["ids"], message: "Each project can be selected only once." });

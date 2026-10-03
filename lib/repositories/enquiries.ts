@@ -19,6 +19,7 @@ export type AttachmentInput = { name: string; type: string; size: number; buffer
 export type SaveEnquiryResult = { enquiry: EnquiryRecord; mode: IntegrationMode; created: boolean };
 export type EnquiryIdentityLinks = { accountId?: string; customerId?: string };
 export type AdminEnquiryPatch = { status?: EnquiryStatus; followUpAt?: string; followUpNote?: string; internalNotes?: string; lostReason?: string; customerId?: string; projectId?: string; accountId?: string };
+export type BulkEnquiryDeleteResult = { deletedIds: string[]; skippedIds: string[] };
 
 function developmentEnquiryNumber() {
   const prefix = `ENQ-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}`;
@@ -158,6 +159,46 @@ export async function listAdminEnquiries(query = ""): Promise<EnquiryRecord[]> {
   const { data, error } = await request;
   if (error) throw new Error("Could not load enquiries.");
   return (data || []).map((row) => toEnquiryRecord(row as Record<string, unknown>));
+}
+
+/** Permanently removes explicitly selected enquiries and their DB dependants. */
+export async function deleteAdminEnquiries(ids: readonly string[]): Promise<BulkEnquiryDeleteResult> {
+  const requestedIds = [...new Set(ids)];
+  const mode = integrationMode(serverEnv.supabaseServiceConfigured);
+  if (mode === "mock") {
+    const store = developmentStore();
+    const deleted = new Set(store.enquiries.filter((enquiry) => requestedIds.includes(enquiry.id)).map((enquiry) => enquiry.id));
+    store.enquiries = store.enquiries.filter((enquiry) => !deleted.has(enquiry.id));
+    store.enquiryNotes = store.enquiryNotes.filter((note) => !deleted.has(note.enquiryId));
+    return { deletedIds: requestedIds.filter((id) => deleted.has(id)), skippedIds: requestedIds.filter((id) => !deleted.has(id)) };
+  }
+  if (mode === "unconfigured") throw new Error("Enquiry storage is not configured.");
+  const client = getSupabaseServiceClient();
+  if (!client) throw new Error("Supabase service client is unavailable.");
+
+  // Remove private storage objects after the database deletion. Database
+  // dependants (items, notes, attachments and continuations) cascade.
+  const { data: attachments, error: attachmentError } = await client
+    .from("enquiry_attachments")
+    .select("file_url")
+    .in("enquiry_id", requestedIds);
+  if (attachmentError) throw new Error("Could not prepare the selected enquiries for deletion.");
+  const { data: deletedRows, error } = await client
+    .from("enquiries")
+    .delete()
+    .in("id", requestedIds)
+    .select("id");
+  if (error) throw new Error("Could not delete the selected enquiries.");
+  const deletedIds = (deletedRows || []).map((row) => String(row.id));
+  const deleted = new Set(deletedIds);
+  const attachmentPaths = (attachments || [])
+    .map((attachment) => attachment.file_url ? String(attachment.file_url) : "")
+    .filter((path) => path && !/^https?:\/\//i.test(path));
+  if (attachmentPaths.length) {
+    const { error: storageError } = await client.storage.from("rfq-attachments").remove(attachmentPaths);
+    if (storageError) console.error("Enquiry attachment cleanup failed", { count: attachmentPaths.length, message: storageError.message });
+  }
+  return { deletedIds, skippedIds: requestedIds.filter((id) => !deleted.has(id)) };
 }
 
 /** Returns the complete enquiry history for one approved customer. */

@@ -29,6 +29,7 @@ export type CustomerDetail = {
   };
 };
 export type SaveCustomerResult = { customer: CustomerRecord; mode: IntegrationMode };
+export type BulkCustomerDeleteResult = { deletedIds: string[]; skippedIds: string[] };
 
 export class CustomerConflictError extends Error {}
 
@@ -116,6 +117,31 @@ export async function listAdminCustomers(query = ""): Promise<CustomerRecord[]> 
   const { data, error } = await request;
   if (error) throw new Error("Could not load customers.");
   return (data || []).map((row) => toCustomerRecord(row as Record<string, unknown>));
+}
+
+/**
+ * Permanently removes explicitly selected customer master records. Database
+ * links from enquiries, projects, quotations and accounts are nullable, so
+ * their commercial records remain available but become unlinked.
+ */
+export async function deleteAdminCustomers(ids: readonly string[]): Promise<BulkCustomerDeleteResult> {
+  const requestedIds = [...new Set(ids)];
+  const mode = integrationMode(serverEnv.supabaseServiceConfigured);
+  if (mode === "mock") {
+    const store = developmentStore();
+    const deleted = new Set(store.customers.filter((customer) => requestedIds.includes(customer.id)).map((customer) => customer.id));
+    store.customers = store.customers.filter((customer) => !deleted.has(customer.id));
+    store.customerNotes = store.customerNotes.filter((note) => !deleted.has(note.customerId));
+    return { deletedIds: requestedIds.filter((id) => deleted.has(id)), skippedIds: requestedIds.filter((id) => !deleted.has(id)) };
+  }
+  if (mode === "unconfigured") throw new Error("Customer storage is not configured.");
+  const client = getSupabaseServiceClient();
+  if (!client) throw new Error("Supabase service client is unavailable.");
+  const { data, error } = await client.from("customers").delete().in("id", requestedIds).select("id");
+  if (error) throw new Error("Could not delete the selected customers.");
+  const deletedIds = (data || []).map((row) => String(row.id));
+  const deleted = new Set(deletedIds);
+  return { deletedIds, skippedIds: requestedIds.filter((id) => !deleted.has(id)) };
 }
 
 export async function createAdminCustomer(input: CustomerInput): Promise<SaveCustomerResult> {

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowRight, BriefcaseBusiness, Building2, ChevronDown, ClipboardList, Edit3, FileText, Mail, MapPin, MessageSquarePlus, Phone, RefreshCw, Search, UsersRound, X, type LucideIcon } from "lucide-react";
 import { adminFetch } from "@/lib/auth/admin-client";
 import type { CustomerNote, CustomerRecord, CustomerStatus, CustomerType, EnquiryRecord, ProjectRecord, QuotationRecord } from "@/lib/db/types";
+import AdminBulkDeleteControls from "@/components/admin-bulk-delete-controls";
 
 const customerTypes: Array<{ value: CustomerType; label: string }> = [
   { value: "hvac_contractor", label: "HVAC contractor" }, { value: "consultant", label: "Consultant" }, { value: "peb_contractor", label: "PEB contractor" }, { value: "architect", label: "Architect" }, { value: "dealer", label: "Dealer" }, { value: "end_user", label: "End user" }, { value: "industrial_customer", label: "Industrial customer" }, { value: "other", label: "Other" },
@@ -20,6 +21,8 @@ export default function AdminCustomersPanel() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [selected, setSelected] = useState<CustomerDetail | null>(null);
+  const [selectedForDeletion, setSelectedForDeletion] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
@@ -29,7 +32,9 @@ export default function AdminCustomersPanel() {
       const response = await adminFetch("/api/admin/customers", { cache: "no-store" });
       const data = await response.json() as { customers?: CustomerRecord[]; message?: string };
       if (!response.ok) throw new Error(data.message || "Could not load customers.");
-      setRecords(data.customers || []);
+      const customers = data.customers || [];
+      setRecords(customers);
+      setSelectedForDeletion((current) => current.filter((id) => customers.some((customer) => customer.id === id)));
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Could not load customers.");
     } finally {
@@ -49,6 +54,9 @@ export default function AdminCustomersPanel() {
     (status === "all" || record.status === status)
     && [record.fullName, record.company, record.phone, record.email, record.gstin, record.city].join(" ").toLowerCase().includes(query.toLowerCase())
   )), [records, query, status]);
+  const filteredIds = useMemo(() => filtered.map((record) => record.id), [filtered]);
+  const selectedIds = selectedForDeletion.filter((id) => records.some((record) => record.id === id));
+  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.includes(id));
 
   const open = async (id: string) => {
     setMessage("");
@@ -85,6 +93,29 @@ export default function AdminCustomersPanel() {
     event.currentTarget.reset();
     setMessage("Internal note added.");
   };
+  const toggleDeletionSelection = (id: string) => setSelectedForDeletion((current) => current.includes(id) ? current.filter((selectedId) => selectedId !== id) : [...current, id]);
+  const toggleAllFiltered = () => setSelectedForDeletion((current) => {
+    const next = new Set(current);
+    if (allFilteredSelected) filteredIds.forEach((id) => next.delete(id)); else filteredIds.forEach((id) => next.add(id));
+    return [...next];
+  });
+  const deleteSelected = async () => {
+    if (!selectedIds.length || deleting) return;
+    const noun = selectedIds.length === 1 ? "customer" : "customers";
+    if (!window.confirm(`Permanently delete ${selectedIds.length} ${noun}? Customer notes will be removed and linked enquiries, projects, quotations and portal accounts will be disconnected from the deleted customer master. This cannot be undone.`)) return;
+    setDeleting(true); setMessage("");
+    try {
+      const response = await adminFetch("/api/admin/customers", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: selectedIds }) });
+      const data = await response.json() as { deletedIds?: string[]; skippedIds?: string[]; message?: string };
+      if (!response.ok) { setMessage(data.message || "Could not delete the selected customers."); return; }
+      const deleted = new Set(data.deletedIds || []);
+      setRecords((current) => current.filter((record) => !deleted.has(record.id)));
+      setSelected((current) => current && deleted.has(current.customer.id) ? null : current);
+      setSelectedForDeletion([]);
+      const skipped = data.skippedIds?.length || 0;
+      setMessage(`${deleted.size} ${deleted.size === 1 ? "customer" : "customers"} deleted.${skipped ? ` ${skipped} selected record${skipped === 1 ? " was" : "s were"} not found.` : ""}`);
+    } catch { setMessage("Could not delete the selected customers."); } finally { setDeleting(false); }
+  };
 
   return <div className="admin-records">
     <section className="admin-records-toolbar">
@@ -92,10 +123,11 @@ export default function AdminCustomersPanel() {
       <select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">All statuses</option>{statuses.map((item) => <option key={item} value={item}>{item}</option>)}</select>
       <button type="button" onClick={() => void load()}><RefreshCw size={14} />Refresh</button>
     </section>
+    <AdminBulkDeleteControls label="Customers" total={filteredIds.length} selected={selectedIds.length} allSelected={allFilteredSelected} deleting={deleting} onToggleAll={toggleAllFiltered} onDelete={() => void deleteSelected()} note="Deletion removes the customer master record. Linked sales records and portal accounts remain, but are disconnected." />
     {message && <p className="admin-records-message" role="status">{message}</p>}
-    <div className="admin-records-table-wrap"><div className="admin-records-table admin-customers-table">
-      <div className="admin-records-heading"><span>Created</span><span>Customer / company</span><span>Contact</span><span>Type</span><span>GSTIN</span><span>Status</span><span>Location</span><span /></div>
-      {loading ? <div className="admin-records-empty">Loading customers...</div> : filtered.length ? filtered.map((record) => <button type="button" className="admin-records-row" key={record.id} onClick={() => void open(record.id)}><span>{new Date(record.createdAt).toLocaleDateString("en-IN")}</span><span><strong>{record.fullName}</strong><small>{record.company || "Company not provided"}</small></span><span><strong>{record.phone || "No phone"}</strong><small>{record.email || "No email"}</small></span><span>{typeLabel(record.customerType)}</span><span>{record.gstin || "-"}</span><span><em className={`admin-status ${record.status}`}>{record.status}</em></span><span>{[record.city, record.state].filter(Boolean).join(", ") || "-"}</span><ArrowRight size={16} /></button>) : <div className="admin-records-empty"><UsersRound size={25} /><strong>No matching customers</strong><p>Approved registered accounts appear here after review.</p></div>}
+    <div className="admin-records-table-wrap"><div className="admin-records-table admin-customers-table admin-selectable-records">
+      <div className="admin-records-heading"><span>Select</span><span>Created</span><span>Customer / company</span><span>Contact</span><span>Type</span><span>GSTIN</span><span>Status</span><span>Location</span><span /></div>
+      {loading ? <div className="admin-records-empty">Loading customers...</div> : filtered.length ? filtered.map((record) => <div className="admin-records-row" role="button" tabIndex={0} key={record.id} onClick={() => void open(record.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void open(record.id); } }}><span className="admin-record-selection" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}><input type="checkbox" checked={selectedIds.includes(record.id)} onChange={() => toggleDeletionSelection(record.id)} aria-label={`Select ${record.fullName} for deletion`} /></span><span>{new Date(record.createdAt).toLocaleDateString("en-IN")}</span><span><strong>{record.fullName}</strong><small>{record.company || "Company not provided"}</small></span><span><strong>{record.phone || "No phone"}</strong><small>{record.email || "No email"}</small></span><span>{typeLabel(record.customerType)}</span><span>{record.gstin || "-"}</span><span><em className={`admin-status ${record.status}`}>{record.status}</em></span><span>{[record.city, record.state].filter(Boolean).join(", ") || "-"}</span><ArrowRight size={16} /></div>) : <div className="admin-records-empty"><UsersRound size={25} /><strong>No matching customers</strong><p>Approved registered accounts appear here after review.</p></div>}
     </div></div>
     {selected && <CustomerDrawer detail={selected} onClose={() => setSelected(null)} onUpdate={update} onAddNote={addNote} />}
   </div>;
