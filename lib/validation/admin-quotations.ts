@@ -15,6 +15,11 @@ export const adminQuotationPatchSchema = z.object({
 
 export const adminQuotationNoteSchema = z.object({ note: z.string().trim().min(1, "Enter an internal note.").max(5000) });
 
+/** The repository applies the permanent-delete safety rules. This only bounds the explicit Admin selection. */
+export const adminQuotationBulkDeleteSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1, "Select at least one quotation.").max(100, "Select no more than 100 quotations at once."),
+}).refine(({ ids }) => new Set(ids).size === ids.length, { path: ["ids"], message: "Each quotation can be selected only once." });
+
 const revisionItemSchema = z.object({
   variantId: z.string().trim().min(1).max(180),
   productName: z.string().trim().min(1, "Enter a product name.").max(200),
@@ -74,6 +79,8 @@ export const adminQuotationCreateSchema = z.object({
   customer: quotationCustomerSchema,
   items: z.array(adminStandardQuotationItemSchema).max(100).default([]),
   customBuiltUpItems: z.array(adminBuiltUpNbrSelectionSchema).max(25).default([]),
+  /** Applies to standard configuration-line rates after Rate Card pricing. */
+  discountPercent: z.coerce.number().finite().min(0).max(100).default(0),
   gstRate: z.coerce.number().finite().min(0).max(100),
   ...transportFields,
   enquiryId: z.string().uuid().optional(),

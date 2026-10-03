@@ -89,3 +89,14 @@ export async function priceAdminStandardQuotationLines(inputs: Array<{
   const rateSnapshot = pricedVariants ?? await getServerPricedVariants(inputs.map((input) => input.variantId));
   return Promise.all(inputs.map((input) => priceAdminStandardQuotationLine(input, rateSnapshot)));
 }
+
+/** Applies an Admin's one-off commercial discount after active Rate Card pricing. */
+export function applyAdminQuotationDiscount(lines: CalculatedQuoteLine[], discountPercent = 0): CalculatedQuoteLine[] {
+  const discount = Number.isFinite(discountPercent) ? Math.min(100, Math.max(0, discountPercent)) : 0;
+  if (discount === 0) return lines;
+  const multiplier = 1 - discount / 100;
+  return lines.map((line) => {
+    const rate = normalizeRate(line.rate * multiplier);
+    return { ...line, rate, amount: Number((line.suppliedQuantity * rate).toFixed(2)) };
+  });
+}

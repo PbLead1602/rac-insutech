@@ -20,6 +20,7 @@ const currency = new Intl.NumberFormat("en-IN", { style: "currency", currency: "
 const localDateTime = (value?: string) => value ? new Date(value).toISOString().slice(0, 16) : "";
 const localDate = (value?: string) => value ? value.slice(0, 10) : "";
 const discountedRate = (rate: number, discountPercent: number) => normalizeRate(Math.max(0, rate) * (1 - discountPercent / 100));
+const canDeleteUnusedAdminQuotation = (quotation: QuotationRecord) => quotation.source === "admin_created" && quotation.status === "generated" && !quotation.lastSentAt && !quotation.lastViewedAt;
 
 function AdminBuiltUpNbrBreakdown({ item }: { item: QuotationRecord["items"][number] }) {
   const custom = item.customBuiltUp;
@@ -33,13 +34,17 @@ export default function AdminQuotationsPanel() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState("all");
   const [selected, setSelected] = useState<QuotationDetail | null>(null);
+  const [selectedForDeletion, setSelectedForDeletion] = useState<string[]>([]);
+  const [deleting, setDeleting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
 
   const load = useCallback(async () => {
     const response = await adminFetch("/api/admin/quotations");
     const data = await response.json() as { quotations?: QuotationRecord[]; message?: string };
-    setRecords(data.quotations || []);
+    const quotations = data.quotations || [];
+    setRecords(quotations);
+    setSelectedForDeletion((current) => current.filter((id) => quotations.some((quotation) => quotation.id === id && canDeleteUnusedAdminQuotation(quotation))));
     if (!response.ok) setMessage(data.message || "Could not load quotations.");
     setLoading(false);
   }, []);
@@ -53,6 +58,13 @@ export default function AdminQuotationsPanel() {
     const value = [record.quoteNumber, record.customer.fullName, record.customer.company, record.customer.mobile, record.customer.email, record.customer.projectName, ...record.items.map((item) => item.productName)].join(" ").toLowerCase();
     return matchStatus && value.includes(query.toLowerCase());
   }), [records, query, status]);
+  const deletableQuotationIds = useMemo(() => new Set(records
+    .filter(canDeleteUnusedAdminQuotation)
+    .filter((quotation) => !records.some((candidate) => candidate.parentQuotationId === quotation.id))
+    .map((quotation) => quotation.id)), [records]);
+  const filteredDeletableIds = useMemo(() => filtered.filter((quotation) => deletableQuotationIds.has(quotation.id)).map((quotation) => quotation.id), [deletableQuotationIds, filtered]);
+  const selectedDeletableIds = selectedForDeletion.filter((id) => deletableQuotationIds.has(id));
+  const allFilteredDeletableSelected = filteredDeletableIds.length > 0 && filteredDeletableIds.every((id) => selectedDeletableIds.includes(id));
 
   const open = useCallback(async (id: string) => {
     const response = await adminFetch(`/api/admin/quotations/${id}`);
@@ -118,7 +130,69 @@ export default function AdminQuotationsPanel() {
     } catch (error) { setMessage(error instanceof Error ? error.message : "Could not download the quotation PDF."); }
   };
 
-  return <div className="admin-records"><section className="admin-records-toolbar"><div className="admin-records-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search quote, customer, company, phone or product" /></div><select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">All statuses</option>{quotationStatusOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select><button type="button" onClick={() => { setLoading(true); void load(); }}>Refresh</button></section>{message && <p className="admin-records-message" role="status">{message}</p>}<div className="admin-records-table-wrap"><div className="admin-records-table admin-quotations-table"><div className="admin-records-heading"><span>Issued</span><span>Quote</span><span>Customer / project</span><span>Value</span><span>Status</span><span>Valid until</span><span>Follow-up</span><span /></div>{loading ? <div className="admin-records-empty">Loading quotations...</div> : filtered.length ? filtered.map((record) => <button type="button" className="admin-records-row" key={record.id} onClick={() => void open(record.id)}><span>{new Date(record.createdAt).toLocaleDateString("en-IN")}</span><span><strong>{record.quoteNumber}</strong><small>{record.source?.replaceAll("_", " ") || "Website auto quote"}</small></span><span><strong>{record.customer.company || record.customer.fullName}</strong><small>{record.customer.projectName || record.items.map((item) => item.productName).slice(0, 2).join(", ") || "Product to be confirmed"}</small></span><span><strong>{currency.format(record.total)}</strong><small>Basic {currency.format(record.subtotal)}</small></span><span><em className={`admin-status ${record.status}`}>{quotationStatusLabel(record.status)}</em></span><span>{record.validUntil ? new Date(`${record.validUntil}T00:00:00`).toLocaleDateString("en-IN") : `${record.validityDays} days`}</span><span>{record.followUpAt ? new Date(record.followUpAt).toLocaleDateString("en-IN") : "-"}</span><ArrowRight size={16} /></button>) : <div className="admin-records-empty"><FileText size={25} /><strong>No matching quotations</strong><p>Website-generated quotations will appear here after a customer completes the form.</p></div>}</div></div>{selected && <QuotationDrawer detail={selected} onClose={() => setSelected(null)} onUpdate={applyUpdate} onAddNote={addNote} onCreateRevision={createRevision} onDownloadPdf={downloadPdf} onSendQuote={sendQuotationEmail} />}</div>;
+  const toggleDeletionSelection = (id: string) => setSelectedForDeletion((current) => current.includes(id) ? current.filter((selectedId) => selectedId !== id) : [...current, id]);
+  const toggleAllFilteredDeletable = () => setSelectedForDeletion((current) => {
+    const next = new Set(current);
+    if (allFilteredDeletableSelected) filteredDeletableIds.forEach((id) => next.delete(id));
+    else filteredDeletableIds.forEach((id) => next.add(id));
+    return [...next];
+  });
+  const deleteSelected = async () => {
+    if (!selectedDeletableIds.length || deleting) return;
+    const noun = selectedDeletableIds.length === 1 ? "quotation" : "quotations";
+    if (!window.confirm(`Permanently delete ${selectedDeletableIds.length} unused Admin-generated ${noun}? Its quotation lines and internal notes will be removed. This cannot be undone.`)) return;
+    setDeleting(true); setMessage("");
+    try {
+      const response = await adminFetch("/api/admin/quotations", { method: "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: selectedDeletableIds }) });
+      const data = await response.json() as { deletedIds?: string[]; skippedIds?: string[]; message?: string };
+      if (!response.ok) { setMessage(data.message || "Could not delete the selected quotations."); return; }
+      const deletedIds = data.deletedIds || [];
+      const deleted = new Set(deletedIds);
+      setRecords((current) => current.filter((quotation) => !deleted.has(quotation.id)));
+      setSelected((current) => current && deleted.has(current.quotation.id) ? null : current);
+      setSelectedForDeletion([]);
+      const skippedCount = data.skippedIds?.length || 0;
+      setMessage(`${deletedIds.length} ${deletedIds.length === 1 ? "quotation" : "quotations"} deleted.${skippedCount ? ` ${skippedCount} protected quotation${skippedCount === 1 ? " was" : "s were"} not deleted.` : ""}`);
+    } catch {
+      setMessage("Could not delete the selected quotations.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return <div className="admin-records">
+    <section className="admin-records-toolbar">
+      <div className="admin-records-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search quote, customer, company, phone or product" /></div>
+      <select value={status} onChange={(event) => setStatus(event.target.value)}><option value="all">All statuses</option>{quotationStatusOptions.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</select>
+      <button type="button" onClick={() => { setLoading(true); void load(); }}>Refresh</button>
+    </section>
+    {filteredDeletableIds.length > 0 && <section className="admin-quotation-bulk-actions" aria-label="Bulk deletion controls">
+      <label><input type="checkbox" checked={allFilteredDeletableSelected} onChange={toggleAllFilteredDeletable} />Select unused Admin drafts ({filteredDeletableIds.length})</label>
+      <button type="button" disabled={!selectedDeletableIds.length || deleting} onClick={() => void deleteSelected()}><Trash2 size={15} />{deleting ? "Deleting..." : `Delete selected (${selectedDeletableIds.length})`}</button>
+      <span>Only Admin-generated quotations that were never sent or viewed can be deleted.</span>
+    </section>}
+    {message && <p className="admin-records-message" role="status">{message}</p>}
+    <div className="admin-records-table-wrap"><div className="admin-records-table admin-quotations-table">
+      <div className="admin-records-heading"><span>Select</span><span>Issued</span><span>Quote</span><span>Customer / project</span><span>Value</span><span>Status</span><span>Valid until</span><span>Follow-up</span><span /></div>
+      {loading ? <div className="admin-records-empty">Loading quotations...</div> : filtered.length ? filtered.map((record) => {
+        const canDelete = deletableQuotationIds.has(record.id);
+        return <div className="admin-records-row" key={record.id} role="button" tabIndex={0} aria-label={`Open quotation ${record.quoteNumber}`} onClick={() => void open(record.id)} onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") { event.preventDefault(); void open(record.id); }
+        }}>
+          <span className="admin-quotation-select" onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>{canDelete && <input type="checkbox" checked={selectedDeletableIds.includes(record.id)} onChange={() => toggleDeletionSelection(record.id)} aria-label={`Select ${record.quoteNumber} for deletion`} />}</span>
+          <span>{new Date(record.createdAt).toLocaleDateString("en-IN")}</span>
+          <span><strong>{record.quoteNumber}</strong><small>{record.source?.replaceAll("_", " ") || "Website auto quote"}</small></span>
+          <span><strong>{record.customer.company || record.customer.fullName}</strong><small>{record.customer.projectName || record.items.map((item) => item.productName).slice(0, 2).join(", ") || "Product to be confirmed"}</small></span>
+          <span><strong>{currency.format(record.total)}</strong><small>Basic {currency.format(record.subtotal)}</small></span>
+          <span><em className={`admin-status ${record.status}`}>{quotationStatusLabel(record.status)}</em></span>
+          <span>{record.validUntil ? new Date(`${record.validUntil}T00:00:00`).toLocaleDateString("en-IN") : `${record.validityDays} days`}</span>
+          <span>{record.followUpAt ? new Date(record.followUpAt).toLocaleDateString("en-IN") : "-"}</span>
+          <ArrowRight size={16} />
+        </div>;
+      }) : <div className="admin-records-empty"><FileText size={25} /><strong>No matching quotations</strong><p>Website-generated quotations will appear here after a customer completes the form.</p></div>}
+    </div></div>
+    {selected && <QuotationDrawer detail={selected} onClose={() => setSelected(null)} onUpdate={applyUpdate} onAddNote={addNote} onCreateRevision={createRevision} onDownloadPdf={downloadPdf} onSendQuote={sendQuotationEmail} />}
+  </div>;
 }
 
 function QuotationDrawer({ detail, onClose, onUpdate, onAddNote, onCreateRevision, onDownloadPdf, onSendQuote }: { detail: QuotationDetail; onClose: () => void; onUpdate: (patch: Record<string, string>) => void; onAddNote: (event: FormEvent<HTMLFormElement>) => void; onCreateRevision: (payload: RevisionPayload) => Promise<boolean>; onDownloadPdf: (quotation: QuotationRecord) => Promise<void>; onSendQuote: (quotation: QuotationRecord) => Promise<void> }) {

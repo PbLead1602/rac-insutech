@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 import { getAdminRequestContext } from "@/lib/auth/admin-server";
-import { createAdminQuotation, listAdminQuotations } from "@/lib/repositories/quotations";
-import { adminQuotationCreateSchema } from "@/lib/validation/admin-quotations";
+import { createAdminQuotation, deleteUnusedAdminQuotations, listAdminQuotations } from "@/lib/repositories/quotations";
+import { adminQuotationBulkDeleteSchema, adminQuotationCreateSchema } from "@/lib/validation/admin-quotations";
 import { createQuotationEnquiry, finaliseQuotationSalesLinks, resolveSalesLinks } from "@/lib/repositories/sales-workflow";
 import { priceCustomBuiltUpNbrItem } from "@/lib/quotations/built-up-nbr-pricing";
-import { getServerPricedVariants, priceAdminStandardQuotationLines } from "@/lib/quotations/pricing";
+import { applyAdminQuotationDiscount, getServerPricedVariants, priceAdminStandardQuotationLines } from "@/lib/quotations/pricing";
 import { getAdminCustomer } from "@/lib/repositories/customers";
 import { getBuiltUpNbrWastagePercent } from "@/lib/repositories/settings";
 import type { CustomerType, QuotationCustomer } from "@/lib/db/types";
@@ -26,6 +26,28 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: true, quotations });
   } catch (error) {
     return NextResponse.json({ ok: false, message: error instanceof Error ? error.message : "Could not load quotations." }, { status: 500 });
+  }
+}
+
+export async function DELETE(request: Request) {
+  if (!await getAdminRequestContext(request)) return NextResponse.json({ ok: false, message: "Authorised Admin access is required." }, { status: 401 });
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ ok: false, message: "Select one or more quotations to delete." }, { status: 400 });
+  }
+  const parsed = adminQuotationBulkDeleteSchema.safeParse(body);
+  if (!parsed.success) return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message || "Check the selected quotations." }, { status: 400 });
+  try {
+    const result = await deleteUnusedAdminQuotations(parsed.data.ids);
+    return NextResponse.json({ ok: true, ...result });
+  } catch (error) {
+    console.error("Admin quotation bulk deletion failed", {
+      count: parsed.data.ids.length,
+      message: error instanceof Error ? error.message : "Unknown error",
+    });
+    return NextResponse.json({ ok: false, message: "Could not delete the selected quotations." }, { status: 500 });
   }
 }
 
@@ -68,7 +90,10 @@ export async function POST(request: Request) {
       ...parsed.data.customBuiltUpItems.flatMap((item) => item.layers.map((layer) => layer.variantId)),
     ]);
     stage = "standard line pricing";
-    const standardItems = await priceAdminStandardQuotationLines(parsed.data.items, pricedVariants);
+    const standardItems = applyAdminQuotationDiscount(
+      await priceAdminStandardQuotationLines(parsed.data.items, pricedVariants),
+      parsed.data.discountPercent,
+    );
     stage = "custom built-up line pricing";
     const builtUpWastagePercent = parsed.data.customBuiltUpItems.length ? await getBuiltUpNbrWastagePercent() : undefined;
     const customItems = await Promise.all(parsed.data.customBuiltUpItems.map(({ overrideAmount, overrideReason, ...selection }) => priceCustomBuiltUpNbrItem(

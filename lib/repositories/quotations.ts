@@ -399,6 +399,86 @@ export async function listAdminQuotations(query = ""): Promise<QuotationRecord[]
   return (data || []).map((row) => quotationFromRow(row as Record<string, unknown>));
 }
 
+/**
+ * Deletes only unused quotations created directly by an Admin. Customer and
+ * issued records remain immutable: this is limited to unwanted generated
+ * drafts that have never been sent or viewed.
+ */
+function canDeleteUnusedAdminQuotation(quotation: Pick<QuotationRecord, "source" | "status" | "lastSentAt" | "lastViewedAt">) {
+  return quotation.source === "admin_created"
+    && quotation.status === "generated"
+    && !quotation.lastSentAt
+    && !quotation.lastViewedAt;
+}
+
+export type BulkQuotationDeleteResult = { deletedIds: string[]; skippedIds: string[] };
+
+export async function deleteUnusedAdminQuotations(ids: readonly string[]): Promise<BulkQuotationDeleteResult> {
+  const requestedIds = [...new Set(ids)];
+  const mode = integrationMode(serverEnv.supabaseServiceConfigured);
+  if (mode === "mock") {
+    const store = developmentStore();
+    const deletableIds = new Set(store.quotations
+      .filter((quotation) => requestedIds.includes(quotation.id))
+      .filter(canDeleteUnusedAdminQuotation)
+      // Revision parents are retained as immutable commercial history.
+      .filter((quotation) => !store.quotations.some((candidate) => candidate.parentQuotationId === quotation.id))
+      .map((quotation) => quotation.id));
+    store.quotations = store.quotations.filter((quotation) => !deletableIds.has(quotation.id));
+    store.quotationNotes = store.quotationNotes.filter((note) => !deletableIds.has(note.quotationId));
+    return {
+      deletedIds: requestedIds.filter((id) => deletableIds.has(id)),
+      skippedIds: requestedIds.filter((id) => !deletableIds.has(id)),
+    };
+  }
+  if (mode === "unconfigured") throw new Error("Quotation storage is not configured.");
+  const client = getSupabaseServiceClient();
+  if (!client) throw new Error("Supabase service client is unavailable.");
+
+  const { data: candidates, error: candidateError } = await client
+    .from("quotations")
+    .select("id, source, status, last_sent_at, last_viewed_at")
+    .in("id", requestedIds);
+  if (candidateError) throw new Error("Could not check the selected quotations.");
+
+  const eligibleIds = (candidates || [])
+    .filter((row) => canDeleteUnusedAdminQuotation({
+      source: row.source as QuotationSource | undefined,
+      status: row.status as QuotationStatus,
+      lastSentAt: row.last_sent_at ? String(row.last_sent_at) : undefined,
+      lastViewedAt: row.last_viewed_at ? String(row.last_viewed_at) : undefined,
+    }))
+    .map((row) => String(row.id));
+  if (!eligibleIds.length) return { deletedIds: [], skippedIds: requestedIds };
+
+  // `parent_quotation_id` uses ON DELETE RESTRICT, so a quotation with a
+  // revision child is ineligible even if the parent still looks generated.
+  const { data: children, error: childError } = await client
+    .from("quotations")
+    .select("parent_quotation_id")
+    .in("parent_quotation_id", eligibleIds);
+  if (childError) throw new Error("Could not verify quotation revision history.");
+  const parentIdsWithRevisions = new Set((children || []).map((row) => String(row.parent_quotation_id)));
+  const deletableIds = eligibleIds.filter((id) => !parentIdsWithRevisions.has(id));
+  if (!deletableIds.length) return { deletedIds: [], skippedIds: requestedIds };
+
+  // All dependent quotation data uses database cascades. Repeat each safety
+  // guard in the final write so a concurrent send/view cannot be deleted.
+  const { data: deletedRows, error: deleteError } = await client
+    .from("quotations")
+    .delete()
+    .in("id", deletableIds)
+    .eq("source", "admin_created")
+    .eq("status", "generated")
+    .is("last_sent_at", null)
+    .is("last_viewed_at", null)
+    .select("id");
+  if (deleteError) throw new Error("Could not delete the selected quotations.");
+  const deletedIds = (deletedRows || []).map((row) => String(row.id));
+  const deleted = new Set(deletedIds);
+  return { deletedIds, skippedIds: requestedIds.filter((id) => !deleted.has(id)) };
+}
+
 /** Returns the full commercial history for a selected customer record. */
 export async function listAdminQuotationsForCustomer(customerId: string): Promise<QuotationRecord[]> {
   const mode = integrationMode(serverEnv.supabaseServiceConfigured);
