@@ -399,36 +399,68 @@ export async function listAdminQuotations(query = ""): Promise<QuotationRecord[]
   return (data || []).map((row) => quotationFromRow(row as Record<string, unknown>));
 }
 
-/**
- * Deletes only unused quotations created directly by an Admin. Customer and
- * issued records remain immutable: this is limited to unwanted generated
- * drafts that have never been sent or viewed.
- */
-function canDeleteUnusedAdminQuotation(quotation: Pick<QuotationRecord, "source" | "status" | "lastSentAt" | "lastViewedAt">) {
-  return quotation.source === "admin_created"
-    && quotation.status === "generated"
-    && !quotation.lastSentAt
-    && !quotation.lastViewedAt;
-}
-
 export type BulkQuotationDeleteResult = { deletedIds: string[]; skippedIds: string[] };
 
-export async function deleteUnusedAdminQuotations(ids: readonly string[]): Promise<BulkQuotationDeleteResult> {
+type QuotationDeletionRow = { id: string; parentQuotationId?: string };
+
+/**
+ * Builds a child-before-parent deletion order. Quotations deliberately use a
+ * restrictive parent/revision foreign key, so a parent can only be removed
+ * when every one of its revisions was selected in the same Admin action.
+ */
+function buildQuotationDeletionPlan(requestedIds: readonly string[], candidates: QuotationDeletionRow[], hierarchy: QuotationDeletionRow[]) {
+  const selectedIds = new Set(candidates.map((quotation) => quotation.id));
+  const parentByChildId = new Map(hierarchy.map((quotation) => [quotation.id, quotation.parentQuotationId]));
+  const blockedIds = new Set<string>();
+
+  for (const quotation of hierarchy) {
+    if (quotation.parentQuotationId && selectedIds.has(quotation.parentQuotationId) && !selectedIds.has(quotation.id)) {
+      blockedIds.add(quotation.parentQuotationId);
+    }
+  }
+  // A selected revision with an unselected child also blocks each selected
+  // ancestor, not only its immediate parent.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const id of [...blockedIds]) {
+      const parentId = parentByChildId.get(id);
+      if (parentId && selectedIds.has(parentId) && !blockedIds.has(parentId)) {
+        blockedIds.add(parentId);
+        changed = true;
+      }
+    }
+  }
+
+  const remaining = new Map(candidates.filter((quotation) => !blockedIds.has(quotation.id)).map((quotation) => [quotation.id, quotation]));
+  const deletionOrder: string[][] = [];
+  while (remaining.size) {
+    const parentIds = new Set([...remaining.values()].map((quotation) => quotation.parentQuotationId).filter((id): id is string => Boolean(id)));
+    const leaves = [...remaining.keys()].filter((id) => !parentIds.has(id));
+    if (!leaves.length) break;
+    deletionOrder.push(leaves);
+    leaves.forEach((id) => remaining.delete(id));
+  }
+  const plannedIds = new Set(deletionOrder.flat());
+  return { deletionOrder, skippedIds: requestedIds.filter((id) => !plannedIds.has(id)) };
+}
+
+export async function deleteAdminQuotations(ids: readonly string[]): Promise<BulkQuotationDeleteResult> {
   const requestedIds = [...new Set(ids)];
   const mode = integrationMode(serverEnv.supabaseServiceConfigured);
   if (mode === "mock") {
     const store = developmentStore();
-    const deletableIds = new Set(store.quotations
+    const candidates = store.quotations
       .filter((quotation) => requestedIds.includes(quotation.id))
-      .filter(canDeleteUnusedAdminQuotation)
-      // Revision parents are retained as immutable commercial history.
-      .filter((quotation) => !store.quotations.some((candidate) => candidate.parentQuotationId === quotation.id))
-      .map((quotation) => quotation.id));
-    store.quotations = store.quotations.filter((quotation) => !deletableIds.has(quotation.id));
-    store.quotationNotes = store.quotationNotes.filter((note) => !deletableIds.has(note.quotationId));
+      .map((quotation) => ({ id: quotation.id, parentQuotationId: quotation.parentQuotationId }));
+    const plan = buildQuotationDeletionPlan(requestedIds, candidates, store.quotations.map((quotation) => ({ id: quotation.id, parentQuotationId: quotation.parentQuotationId })));
+    const deletedIds = plan.deletionOrder.flat();
+    const deleted = new Set(deletedIds);
+    store.quotations = store.quotations.filter((quotation) => !deleted.has(quotation.id));
+    store.quotationNotes = store.quotationNotes.filter((note) => !deleted.has(note.quotationId));
     return {
-      deletedIds: requestedIds.filter((id) => deletableIds.has(id)),
-      skippedIds: requestedIds.filter((id) => !deletableIds.has(id)),
+      deletedIds,
+      skippedIds: plan.skippedIds,
     };
   }
   if (mode === "unconfigured") throw new Error("Quotation storage is not configured.");
@@ -437,44 +469,50 @@ export async function deleteUnusedAdminQuotations(ids: readonly string[]): Promi
 
   const { data: candidates, error: candidateError } = await client
     .from("quotations")
-    .select("id, source, status, last_sent_at, last_viewed_at")
+    .select("id, parent_quotation_id")
     .in("id", requestedIds);
   if (candidateError) throw new Error("Could not check the selected quotations.");
+  const selectedRows = (candidates || []).map((row) => ({ id: String(row.id), parentQuotationId: row.parent_quotation_id ? String(row.parent_quotation_id) : undefined }));
+  if (!selectedRows.length) return { deletedIds: [], skippedIds: requestedIds };
 
-  const eligibleIds = (candidates || [])
-    .filter((row) => canDeleteUnusedAdminQuotation({
-      source: row.source as QuotationSource | undefined,
-      status: row.status as QuotationStatus,
-      lastSentAt: row.last_sent_at ? String(row.last_sent_at) : undefined,
-      lastViewedAt: row.last_viewed_at ? String(row.last_viewed_at) : undefined,
-    }))
-    .map((row) => String(row.id));
-  if (!eligibleIds.length) return { deletedIds: [], skippedIds: requestedIds };
+  // Load all revision descendants of the selected rows. Normal revisions are
+  // one level deep, but the loop also protects legacy nested revisions.
+  const hierarchy = [...selectedRows];
+  let parentsToCheck = selectedRows.map((quotation) => quotation.id);
+  const seenIds = new Set(hierarchy.map((quotation) => quotation.id));
+  while (parentsToCheck.length) {
+    const { data: children, error: childError } = await client
+      .from("quotations")
+      .select("id, parent_quotation_id")
+      .in("parent_quotation_id", parentsToCheck);
+    if (childError) throw new Error("Could not verify quotation revision history.");
+    const nextParents: string[] = [];
+    for (const child of children || []) {
+      const id = String(child.id);
+      if (seenIds.has(id)) continue;
+      seenIds.add(id);
+      hierarchy.push({ id, parentQuotationId: child.parent_quotation_id ? String(child.parent_quotation_id) : undefined });
+      nextParents.push(id);
+    }
+    parentsToCheck = nextParents;
+  }
 
-  // `parent_quotation_id` uses ON DELETE RESTRICT, so a quotation with a
-  // revision child is ineligible even if the parent still looks generated.
-  const { data: children, error: childError } = await client
-    .from("quotations")
-    .select("parent_quotation_id")
-    .in("parent_quotation_id", eligibleIds);
-  if (childError) throw new Error("Could not verify quotation revision history.");
-  const parentIdsWithRevisions = new Set((children || []).map((row) => String(row.parent_quotation_id)));
-  const deletableIds = eligibleIds.filter((id) => !parentIdsWithRevisions.has(id));
-  if (!deletableIds.length) return { deletedIds: [], skippedIds: requestedIds };
+  const plan = buildQuotationDeletionPlan(requestedIds, selectedRows, hierarchy);
+  if (!plan.deletionOrder.length) return { deletedIds: [], skippedIds: plan.skippedIds };
 
-  // All dependent quotation data uses database cascades. Repeat each safety
-  // guard in the final write so a concurrent send/view cannot be deleted.
-  const { data: deletedRows, error: deleteError } = await client
-    .from("quotations")
-    .delete()
-    .in("id", deletableIds)
-    .eq("source", "admin_created")
-    .eq("status", "generated")
-    .is("last_sent_at", null)
-    .is("last_viewed_at", null)
-    .select("id");
-  if (deleteError) throw new Error("Could not delete the selected quotations.");
-  const deletedIds = (deletedRows || []).map((row) => String(row.id));
+  // Quotation items, notes, events and customer revision requests use
+  // database cascades. Delete revision leaves before parents to satisfy the
+  // deliberately restrictive parent/revision relationship.
+  const deletedIds: string[] = [];
+  for (const idsToDelete of plan.deletionOrder) {
+    const { data: deletedRows, error: deleteError } = await client
+      .from("quotations")
+      .delete()
+      .in("id", idsToDelete)
+      .select("id");
+    if (deleteError) throw new Error("Could not delete the selected quotations.");
+    deletedIds.push(...(deletedRows || []).map((row) => String(row.id)));
+  }
   const deleted = new Set(deletedIds);
   return { deletedIds, skippedIds: requestedIds.filter((id) => !deleted.has(id)) };
 }

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdminRequestContext } from "@/lib/auth/admin-server";
-import { createAdminQuotation, deleteUnusedAdminQuotations, listAdminQuotations } from "@/lib/repositories/quotations";
+import { createAdminQuotation, deleteAdminQuotations, listAdminQuotations } from "@/lib/repositories/quotations";
 import { adminQuotationBulkDeleteSchema, adminQuotationCreateSchema } from "@/lib/validation/admin-quotations";
 import { createQuotationEnquiry, finaliseQuotationSalesLinks, resolveSalesLinks } from "@/lib/repositories/sales-workflow";
 import { priceCustomBuiltUpNbrItem } from "@/lib/quotations/built-up-nbr-pricing";
@@ -40,7 +40,7 @@ export async function DELETE(request: Request) {
   const parsed = adminQuotationBulkDeleteSchema.safeParse(body);
   if (!parsed.success) return NextResponse.json({ ok: false, message: parsed.error.issues[0]?.message || "Check the selected quotations." }, { status: 400 });
   try {
-    const result = await deleteUnusedAdminQuotations(parsed.data.ids);
+    const result = await deleteAdminQuotations(parsed.data.ids);
     return NextResponse.json({ ok: true, ...result });
   } catch (error) {
     console.error("Admin quotation bulk deletion failed", {

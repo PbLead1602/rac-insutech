@@ -15,7 +15,7 @@ export const adminQuotationPatchSchema = z.object({
 
 export const adminQuotationNoteSchema = z.object({ note: z.string().trim().min(1, "Enter an internal note.").max(5000) });
 
-/** The repository applies the permanent-delete safety rules. This only bounds the explicit Admin selection. */
+/** This bounds an explicit, intentional Admin bulk deletion request. */
 export const adminQuotationBulkDeleteSchema = z.object({
   ids: z.array(z.string().uuid()).min(1, "Select at least one quotation.").max(100, "Select no more than 100 quotations at once."),
 }).refine(({ ids }) => new Set(ids).size === ids.length, { path: ["ids"], message: "Each quotation can be selected only once." });
