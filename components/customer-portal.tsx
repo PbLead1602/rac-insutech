@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Bell, CheckCircle2, Clock3, Download, FilePenLine, FileText, FolderKanban, Headphones, LockKeyhole, LogOut, MailCheck, MessageCircle, Plus, ShieldCheck, UserRound, X } from "lucide-react";
 import { CatalogueHeader } from "@/components/catalogue-header";
-import { customerFetch, getCustomerSession, requestCustomerPasswordReset, signInCustomer, signOutCustomer, signUpCustomer, updateCustomerPassword } from "@/lib/auth/customer-client";
+import { completeCustomerAuthCallback, customerFetch, getCustomerSession, requestCustomerPasswordReset, signInCustomer, signOutCustomer, signUpCustomer, updateCustomerPassword } from "@/lib/auth/customer-client";
 import { whatsappContactHref } from "@/lib/contact";
 import { readQuoteLeadDraft } from "@/lib/quotation-draft";
 import { getCustomerSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -200,6 +200,6 @@ export function CustomerSupportPage() { const { portal, error } = useActivePorta
 
 export function AuthCallbackPage() {
   const router = useRouter(); const params = useSearchParams(); const intent = params.get("intent") || ""; const [message, setMessage] = useState("Confirming your verified account…");
-  useEffect(() => { let alive = true; (async () => { try { await continueByStatus(router, intent); } catch (error) { if (alive) setMessage(error instanceof Error ? error.message : "Your email was verified. Please sign in to continue."); } })(); return () => { alive = false; }; }, [intent, router]);
+  useEffect(() => { let alive = true; (async () => { try { await completeCustomerAuthCallback(); await continueByStatus(router, intent); } catch (error) { if (alive) setMessage(error instanceof Error ? error.message : "Your email was verified. Please sign in to continue."); } })(); return () => { alive = false; }; }, [intent, router]);
   return <AuthCard><div className="customer-kicker"><MailCheck size={15} /> EMAIL CONFIRMATION</div><h1>Finishing account setup</h1><p>{message}</p><Link className="customer-secondary" href={intentUrl("/account/sign-in", intent)}>Go to sign in</Link></AuthCard>;
 }

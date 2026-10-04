@@ -98,4 +98,24 @@ export async function getCustomerSession() {
   return readMockSession();
 }
 
+/**
+ * Completes a Supabase PKCE email callback before the portal reads the
+ * customer account. Supabase normally detects this automatically, but an
+ * explicit fallback prevents a callback-page race on slower devices or when
+ * the provider returns a `code` query parameter rather than an implicit hash.
+ */
+export async function completeCustomerAuthCallback() {
+  const client = getCustomerSupabaseBrowserClient();
+  if (!client || typeof window === "undefined") return;
+
+  const { data: { session } } = await client.auth.getSession();
+  if (session) return;
+
+  const code = new URL(window.location.href).searchParams.get("code");
+  if (!code) return;
+
+  const { error } = await client.auth.exchangeCodeForSession(code);
+  if (error) throw new Error("Could not complete email verification. Please use the latest email link or sign in again.");
+}
+
 export async function signOutCustomer() { const client = getCustomerSupabaseBrowserClient(); if (client) await client.auth.signOut(); if (typeof window !== "undefined") window.sessionStorage.removeItem(mockSessionKey); }
