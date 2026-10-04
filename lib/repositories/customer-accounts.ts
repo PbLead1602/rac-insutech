@@ -25,6 +25,7 @@ export type CustomerAccountInput = { fullName: string; companyName?: string; ema
 export type CustomerProfileInput = { fullName: string; mobile: string; billingAddress?: string; shippingAddress?: string; city?: string; state?: string; pinCode?: string };
 export type CustomerAccountContext = { account: CustomerAccount; customer?: CustomerRecord; mode: IntegrationMode };
 export type CustomerPortalData = { account: CustomerAccount; customer?: CustomerRecord; enquiries: EnquiryRecord[]; quotations: QuotationRecord[]; projects: import("@/lib/db/types").ProjectRecord[]; documents: import("@/lib/db/types").DocumentRecord[]; revisionRequests: import("@/lib/db/types").CustomerRevisionRequest[] };
+export type DeletedCustomerAccount = { id: string; email: string };
 
 function normalise(value?: string) { return value?.trim().toLowerCase() || ""; }
 function normalisePhone(value?: string) { return value?.replace(/\D/g, "") || ""; }
@@ -254,6 +255,44 @@ export async function updateCustomerAccountStatus(accountId: string, status: Exc
   const client = getSupabaseServiceClient(); if (!client) throw new Error("Supabase service client is unavailable.");
   const update = { approval_status: status, ...(status === "rejected" ? { rejected_at: now, rejected_reason: reason || null } : {}), ...(status === "suspended" ? { suspended_at: now, suspended_reason: reason || null } : {}) };
   const { data, error } = await client.from("customer_accounts").update(update).eq("id", accountId).select("*").single(); if (error || !data) throw new Error("Could not update account access."); return toAccount(data as Record<string, unknown>);
+}
+
+/**
+ * Permanently removes one person's login and account-approval record. The
+ * database clears account links from commercial records, so the shared
+ * Customer master and its quotation, enquiry and project history stay.
+ */
+export async function permanentlyDeleteCustomerAccount(accountId: string, confirmationEmail: string): Promise<DeletedCustomerAccount> {
+  const confirmedEmail = normalise(confirmationEmail);
+  const mode = integrationMode(serverEnv.supabaseServiceConfigured);
+
+  if (mode === "mock") {
+    const store = developmentStore();
+    const account = store.accounts.find((item) => item.id === accountId);
+    if (!account) throw new Error("Customer account was not found.");
+    if (normalise(account.email) !== confirmedEmail) throw new Error("Type the exact account email address to confirm permanent deletion.");
+    store.accounts = store.accounts.filter((item) => item.id !== accountId);
+    delete store.passwordHashes[accountId];
+    store.continuations = store.continuations.filter((item) => item.accountId !== accountId);
+    return { id: account.id, email: account.email };
+  }
+
+  if (mode === "unconfigured") throw new Error("Customer account storage is not configured.");
+  const client = getSupabaseServiceClient();
+  if (!client) throw new Error("Supabase service client is unavailable.");
+  const { data, error } = await client
+    .from("customer_accounts")
+    .select("id, auth_user_id, email")
+    .eq("id", accountId)
+    .maybeSingle();
+  if (error) throw new Error("Could not load the customer account for deletion.");
+  if (!data) throw new Error("Customer account was not found.");
+
+  const email = String(data.email || "");
+  if (normalise(email) !== confirmedEmail) throw new Error("Type the exact account email address to confirm permanent deletion.");
+  const { error: authError } = await client.auth.admin.deleteUser(String(data.auth_user_id));
+  if (authError) throw new Error("Could not permanently delete the customer login.");
+  return { id: String(data.id), email };
 }
 
 /**

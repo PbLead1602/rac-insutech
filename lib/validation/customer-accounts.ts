@@ -15,6 +15,9 @@ export const customerRegistrationSchema = z.object({
 
 export const continuationSchema = z.object({ intent: z.string().trim().min(20, "The quotation continuation is missing or expired.").max(500) });
 export const customerAccountActionSchema = z.object({ action: z.enum(["approve", "reject", "suspend", "restore_pending"]), reason: z.string().trim().max(1000).optional().default("") });
+export const customerAccountDeleteSchema = z.object({
+  confirmationEmail: z.string().trim().email("Type the account email address to confirm permanent deletion.").max(180),
+});
 export const customerProfileSchema = z.object({
   fullName: z.string().trim().min(2, "Please enter your full name.").max(120),
   mobile: z.string().trim().min(7, "Please enter a valid mobile number.").max(30),

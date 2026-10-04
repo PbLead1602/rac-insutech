@@ -897,3 +897,6 @@ section[id], article[id] { scroll-margin-top: 108px; }
 .admin-revision-discount span,.admin-manual-discount span { padding-bottom: 2px; color: #698199; font-size: 10px; line-height: 1.4; }
 .admin-manual-discount { grid-column: 1 / -1; }
 @media (max-width:620px) { .admin-revision-discount,.admin-manual-discount { align-items: stretch; flex-direction: column; gap: 7px; }.admin-revision-discount label,.admin-manual-discount label { width: 100%; }.admin-revision-discount span,.admin-manual-discount span { padding-bottom: 0; } }
+.admin-account-approvals .admin-approval-delete { min-height: 39px; padding: 0 11px; display: inline-flex; align-items: center; gap: 7px; border: 1px solid #efb9bd; border-radius: 8px; color: #a83842; background: #fff4f4; font-size: 11px; font-weight: 850; }
+.admin-account-approvals .admin-approval-delete:hover:not(:disabled) { border-color: #d8646e; color: #8c2831; background: #ffe9e9; }
+.admin-account-approvals .admin-approval-delete:disabled { cursor: not-allowed; opacity: .58; }
