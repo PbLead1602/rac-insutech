@@ -118,7 +118,12 @@ export async function getCustomerContext(authUserId: string, identity?: { email?
     return { account, customer, mode };
   }
   const client = getSupabaseServiceClient(); if (!client) return null;
-  const { data, error } = await client.from("customers").select("*").eq("account_id", account.id).maybeSingle();
+  // customer_accounts.customer_id is the authoritative membership link. A
+  // Customer master may have several approved company contacts, while the
+  // legacy customers.account_id remains only the primary-contact reference.
+  const { data, error } = account.customerId
+    ? await client.from("customers").select("*").eq("id", account.customerId).maybeSingle()
+    : { data: null, error: null };
   if (error) throw new Error("Could not load the customer profile.");
   return { account, customer: data ? toCustomer(data as Record<string, unknown>) : undefined, mode };
 }
@@ -224,7 +229,9 @@ export async function approveCustomerAccount(accountId: string, adminId?: string
     const index = developmentStore().accounts.findIndex((item) => item.id === accountId); if (index < 0) throw new Error("Customer account was not found.");
     const account = developmentStore().accounts[index]; if (!account.emailVerified || account.status !== "pending_admin_approval") throw new Error("Only verified pending accounts can be approved.");
     const customerResult = await findOrCreateCustomerForQuotation(accountToQuoteCustomer(account));
-    await updateAdminCustomer(customerResult.customer.id, { accountId: account.id });
+    // Preserve the first account recorded on the Customer master as the
+    // legacy primary contact. Approved contacts keep their own customerId.
+    if (!customerResult.customer.accountId) await updateAdminCustomer(customerResult.customer.id, { accountId: account.id });
     const now = new Date().toISOString(); const approved = { ...account, status: "active" as const, customerId: customerResult.customer.id, approvedAt: now, approvedBy: adminId, updatedAt: now };
     developmentStore().accounts[index] = approved;
     if (account.pendingEnquiryId) await updateAdminEnquiry(account.pendingEnquiryId, { accountId: account.id, customerId: customerResult.customer.id, status: "qualified" });
@@ -249,7 +256,11 @@ export async function updateCustomerAccountStatus(accountId: string, status: Exc
   const { data, error } = await client.from("customer_accounts").update(update).eq("id", accountId).select("*").single(); if (error || !data) throw new Error("Could not update account access."); return toAccount(data as Record<string, unknown>);
 }
 
-/** Updates the approved account and its one Customer master in one controlled operation. */
+/**
+ * Updates one approved contact while retaining shared company identity.
+ * Address fields are company-level; the contact name and mobile remain on the
+ * individual customer account so one colleague cannot overwrite another.
+ */
 export async function updateCustomerProfile(context: CustomerAccountContext, input: CustomerProfileInput): Promise<CustomerAccountContext> {
   if (context.account.status !== "active" || !context.customer) throw new Error("Only approved customers can update their profile.");
   const mode = integrationMode(serverEnv.supabaseServiceConfigured); const now = new Date().toISOString();
@@ -257,7 +268,7 @@ export async function updateCustomerProfile(context: CustomerAccountContext, inp
     const accountIndex = developmentStore().accounts.findIndex((item) => item.id === context.account.id); if (accountIndex < 0) throw new Error("Customer account was not found.");
     const account = { ...context.account, fullName: input.fullName.trim(), mobile: input.mobile.trim(), updatedAt: now };
     developmentStore().accounts[accountIndex] = account;
-    const customer = await updateAdminCustomer(context.customer.id, { fullName: account.fullName, phone: account.mobile, billingAddress: input.billingAddress || "", shippingAddress: input.shippingAddress || "", city: input.city || "", state: input.state || "", pinCode: input.pinCode || "" });
+    const customer = await updateAdminCustomer(context.customer.id, { billingAddress: input.billingAddress || "", shippingAddress: input.shippingAddress || "", city: input.city || "", state: input.state || "", pinCode: input.pinCode || "" });
     if (!customer) throw new Error("Customer profile was not found.");
     return { account, customer, mode };
   }
@@ -265,7 +276,7 @@ export async function updateCustomerProfile(context: CustomerAccountContext, inp
   const client = getSupabaseServiceClient(); if (!client) throw new Error("Supabase service client is unavailable.");
   const [{ data: accountRow, error: accountError }, { data: customerRow, error: customerError }] = await Promise.all([
     client.from("customer_accounts").update({ full_name: input.fullName.trim(), mobile: input.mobile.trim() }).eq("id", context.account.id).select("*").single(),
-    client.from("customers").update({ full_name: input.fullName.trim(), phone: input.mobile.trim(), billing_address: input.billingAddress || null, shipping_address: input.shippingAddress || null, city: input.city || null, state: input.state || null, pin_code: input.pinCode || null }).eq("id", context.customer.id).select("*").single(),
+    client.from("customers").update({ billing_address: input.billingAddress || null, shipping_address: input.shippingAddress || null, city: input.city || null, state: input.state || null, pin_code: input.pinCode || null }).eq("id", context.customer.id).select("*").single(),
   ]);
   if (accountError || customerError || !accountRow || !customerRow) throw new Error("Could not update your customer profile.");
   return { account: toAccount(accountRow as Record<string, unknown>), customer: toCustomer(customerRow as Record<string, unknown>), mode };
