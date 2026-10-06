@@ -586,12 +586,13 @@ export type CurrentQuotationRate = { variantId: string; rate: number; rateUnit: 
 /** Supplies the currently approved rate-card values when an Admin starts a new quote revision. */
 export async function getCurrentQuotationRevisionRates(id: string): Promise<CurrentQuotationRate[] | null> {
   const detail = await getAdminQuotation(id); if (!detail) return null;
-  return Promise.all(detail.quotation.items.map(async (item) => {
+  const variantIds = [...new Set(detail.quotation.items.flatMap((item) => item.customBuiltUp ? item.customBuiltUp.layers.map((layer) => layer.variantId) : [item.variantId]).filter(Boolean))];
+  return Promise.all(variantIds.map(async (variantId) => {
     try {
-      const variant = await getServerPricedVariant(item.variantId);
-      return variant ? { variantId: item.variantId, rate: normalizeRate(variant.rate), rateUnit: `per ${variant.rateUnit}`, found: true } : { variantId: item.variantId, rate: normalizeRate(item.rate), rateUnit: item.rateUnit, found: false };
+      const variant = await getServerPricedVariant(variantId);
+      return variant ? { variantId, rate: normalizeRate(variant.rate), rateUnit: `per ${variant.rateUnit}`, found: true } : { variantId, rate: 0, rateUnit: "", found: false };
     } catch {
-      return { variantId: item.variantId, rate: normalizeRate(item.rate), rateUnit: item.rateUnit, found: false };
+      return { variantId, rate: 0, rateUnit: "", found: false };
     }
   }));
 }

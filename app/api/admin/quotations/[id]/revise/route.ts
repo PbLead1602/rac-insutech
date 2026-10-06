@@ -17,7 +17,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const builtUpWastagePercent = parsed.data.customBuiltUpItems.length ? await getBuiltUpNbrWastagePercent() : undefined;
     const customItems = await Promise.all(parsed.data.customBuiltUpItems.map(({ overrideAmount, overrideReason, ...selection }) => priceCustomBuiltUpNbrItem(
       selection,
-      { overrideAmount, overrideReason, wastagePercent: builtUpWastagePercent },
+      { overrideAmount, overrideReason, wastagePercent: builtUpWastagePercent, discountPercent: parsed.data.discountPercent },
       pricedVariants,
     )));
     const quotation = await createAdminQuotationRevision((await params).id, {

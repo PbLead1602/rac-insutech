@@ -66,6 +66,8 @@ export const adminQuotationRevisionSchema = z.object({
   customer: quotationCustomerSchema,
   items: z.array(revisionItemSchema).max(100).default([]),
   customBuiltUpItems: z.array(adminBuiltUpNbrSelectionSchema).max(25).default([]),
+  /** Applies after current Rate Card pricing to standard and Custom Built-Up NBR lines. */
+  discountPercent: z.coerce.number().finite().min(0).max(100).default(0),
   gstRate: z.coerce.number().finite().min(0).max(100),
   ...transportFields,
   validUntil: z.string().date().or(z.literal("")).optional(),
