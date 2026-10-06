@@ -364,6 +364,8 @@ export type CustomBuiltUpNbrSnapshot = {
   totalQuotedAreaM2: number;
   calculatedBasicAmount: number;
   pricePerRunningMetre: number;
+  /** One-off discount applied by the Admin Manual Quotation Builder. */
+  discountPercent?: number;
   layers: CustomBuiltUpNbrLayerSnapshot[];
   /** An Admin may quote a different commercial amount while retaining cost. */
   quotedOverrideAmount?: number;

@@ -5,6 +5,7 @@ import { calculateBuiltUpCylinderInsulation, CUSTOM_BUILT_UP_NBR_ITEM_TYPE, thic
 import { getServerPricedVariant } from "@/lib/quotations/pricing";
 import type { QuoteVariant } from "@/lib/quotations/catalogue";
 import { getBuiltUpNbrWastagePercent } from "@/lib/repositories/settings";
+import { normalizeRate } from "@/lib/rates/rate-precision";
 
 /**
  * Performs the authoritative custom NBR calculation. No browser-supplied
@@ -12,12 +13,14 @@ import { getBuiltUpNbrWastagePercent } from "@/lib/repositories/settings";
  */
 export async function priceCustomBuiltUpNbrItem(
   selection: BuiltUpNbrSelection,
-  options: { wastagePercent?: number; overrideAmount?: number; overrideReason?: string } = {},
+  options: { wastagePercent?: number; overrideAmount?: number; overrideReason?: string; discountPercent?: number } = {},
   pricedVariants?: ReadonlyMap<string, QuoteVariant>,
 ): Promise<QuotationLineRecord> {
   const materialClass = selection.materialClass.trim();
   if (!materialClass) throw new Error("Choose a material class for Custom Diameter / Built-Up NBR.");
   const wastagePercent = options.wastagePercent ?? await getBuiltUpNbrWastagePercent();
+  const discountPercent = Number.isFinite(options.discountPercent) ? Math.min(100, Math.max(0, options.discountPercent || 0)) : 0;
+  const discountMultiplier = 1 - discountPercent / 100;
 
   const variants = await Promise.all(selection.layers.map(async ({ variantId }) => {
     const variant = pricedVariants?.get(variantId) ?? await getServerPricedVariant(variantId);
@@ -40,7 +43,7 @@ export async function priceCustomBuiltUpNbrItem(
       variantId: variant.id,
       thicknessMm,
       lamination: variant.lamination,
-      rate: variant.rate,
+      rate: normalizeRate(variant.rate * discountMultiplier),
     })),
   });
   if (calculation.basicAmount === undefined || calculation.pricePerRunningMetre === undefined) {
@@ -61,6 +64,7 @@ export async function priceCustomBuiltUpNbrItem(
   const overrideAmount = options.overrideAmount;
   if (overrideAmount !== undefined && (!Number.isFinite(overrideAmount) || overrideAmount < 0)) throw new Error("The Admin override amount is invalid.");
   if (overrideAmount !== undefined && !options.overrideReason?.trim()) throw new Error("Enter an override reason when changing the calculated built-up NBR amount.");
+  const discountedOverrideAmount = overrideAmount === undefined ? undefined : Number((overrideAmount * discountMultiplier).toFixed(2));
 
   const snapshot: CustomBuiltUpNbrSnapshot = {
     itemType: CUSTOM_BUILT_UP_NBR_ITEM_TYPE,
@@ -77,7 +81,8 @@ export async function priceCustomBuiltUpNbrItem(
     calculatedBasicAmount: calculation.basicAmount,
     pricePerRunningMetre: calculation.pricePerRunningMetre,
     layers,
-    ...(overrideAmount === undefined ? {} : { quotedOverrideAmount: Number(overrideAmount.toFixed(2)), overrideReason: options.overrideReason?.trim() }),
+    ...(discountPercent > 0 ? { discountPercent } : {}),
+    ...(discountedOverrideAmount === undefined ? {} : { quotedOverrideAmount: discountedOverrideAmount, overrideReason: options.overrideReason?.trim() }),
   };
   const amount = snapshot.quotedOverrideAmount ?? snapshot.calculatedBasicAmount;
   const rate = amount / calculation.pipeLengthM;
